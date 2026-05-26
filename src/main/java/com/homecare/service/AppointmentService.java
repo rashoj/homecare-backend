@@ -11,6 +11,7 @@ import com.homecare.repository.ClientRepository;
 import com.homecare.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import com.homecare.dto.AppointmentStatusUpdateRequest;
 
@@ -52,26 +53,32 @@ public class AppointmentService {
             throw new RuntimeException(
                     "Caregiver must be assigned to the client before scheduling."
             );
+
         }
+
 
         validateAppointmentTimes(request);
 
-        Appointment appointment = Appointment.builder()
-                .client(client)
-                .caregiver(caregiver)
-                .startTime(request.getStartTime())
-                .endTime(request.getEndTime())
-                .serviceType(defaultValue(request.getServiceType(), "PERSONAL_CARE"))
-                .shiftType(defaultValue(request.getShiftType(), "REGULAR"))
-                .status(defaultValue(request.getStatus(), "SCHEDULED"))
-                .evvRequired(request.getEvvRequired() != null ? request.getEvvRequired() : true)
-                .billable(request.getBillable() != null ? request.getBillable() : true)
-                .notes(request.getNotes())
-                .completed(false)
-                .build();
+        String repeatType = defaultValue(request.getRepeatType(), "NONE");
 
-        return mapToResponse(appointmentRepository.save(appointment));
+        if ("NONE".equals(repeatType)) {
+            validateNoScheduleConflict(request);
+
+            Appointment appointment = buildAppointment(request, client, caregiver, repeatType);
+
+            return mapToResponse(appointmentRepository.save(appointment));
+        }
+
+        List<Appointment> appointments = createRecurringAppointments(
+                request,
+                client,
+                caregiver,
+                repeatType
+        );
+
+        return mapToResponse(appointments.get(0));
     }
+
 
     public List<AppointmentResponse> getAllAppointments() {
         return appointmentRepository.findAll()
@@ -129,6 +136,8 @@ public class AppointmentService {
                 .billable(appointment.getBillable())
                 .notes(appointment.getNotes())
                 .completed(appointment.getCompleted())
+                .repeatType(appointment.getRepeatType())
+                .recurringGroupCreatedAt(appointment.getRecurringGroupCreatedAt())
                 .build();
     }
     public AppointmentResponse updateAppointmentStatus(
@@ -155,5 +164,139 @@ public class AppointmentService {
         }
 
         return mapToResponse(appointmentRepository.save(appointment));
+    }
+    private void validateNoScheduleConflict(AppointmentRequest request) {
+        boolean caregiverConflict = appointmentRepository
+                .findByCaregiverIdAndStartTimeLessThanAndEndTimeGreaterThan(
+                        request.getCaregiverId(),
+                        request.getEndTime(),
+                        request.getStartTime()
+                )
+                .stream()
+                .anyMatch(appointment ->
+                        !"CANCELLED".equalsIgnoreCase(appointment.getStatus())
+                );
+
+        if (caregiverConflict) {
+            throw new RuntimeException("Caregiver already has an appointment during this time.");
+        }
+
+        boolean clientConflict = appointmentRepository
+                .findByClientIdAndStartTimeLessThanAndEndTimeGreaterThan(
+                        request.getClientId(),
+                        request.getEndTime(),
+                        request.getStartTime()
+                )
+                .stream()
+                .anyMatch(appointment ->
+                        !"CANCELLED".equalsIgnoreCase(appointment.getStatus())
+                );
+
+        if (clientConflict) {
+            throw new RuntimeException("Client already has an appointment during this time.");
+        }
+    }
+    private Appointment buildAppointment(
+            AppointmentRequest request,
+            Client client,
+            User caregiver,
+            String repeatType
+    ) {
+        return Appointment.builder()
+                .client(client)
+                .caregiver(caregiver)
+                .startTime(request.getStartTime())
+                .endTime(request.getEndTime())
+                .serviceType(defaultValue(request.getServiceType(), "PERSONAL_CARE"))
+                .shiftType(defaultValue(request.getShiftType(), "REGULAR"))
+                .status(defaultValue(request.getStatus(), "SCHEDULED"))
+                .evvRequired(request.getEvvRequired() != null ? request.getEvvRequired() : true)
+                .billable(request.getBillable() != null ? request.getBillable() : true)
+                .repeatType(repeatType)
+                .recurringGroupCreatedAt(LocalDateTime.now())
+                .notes(request.getNotes())
+                .completed(false)
+                .build();
+    }
+
+    private List<Appointment> createRecurringAppointments(
+            AppointmentRequest request,
+            Client client,
+            User caregiver,
+            String repeatType
+    ) {
+        if (request.getRepeatUntil() == null) {
+            throw new RuntimeException("Repeat until date is required for recurring appointments.");
+        }
+
+        if (!"DAILY".equals(repeatType) && !"WEEKLY".equals(repeatType)) {
+            throw new RuntimeException("Repeat type must be NONE, DAILY, or WEEKLY.");
+        }
+
+        List<Appointment> appointments = new java.util.ArrayList<>();
+
+        LocalDateTime currentStart = request.getStartTime();
+        LocalDateTime currentEnd = request.getEndTime();
+        LocalDateTime recurringGroupCreatedAt = LocalDateTime.now();
+
+        while (!currentStart.toLocalDate().isAfter(request.getRepeatUntil())) {
+            AppointmentRequest occurrenceRequest = copyRequestWithTimes(
+                    request,
+                    currentStart,
+                    currentEnd
+            );
+
+            validateNoScheduleConflict(occurrenceRequest);
+
+            Appointment appointment = buildAppointment(
+                    occurrenceRequest,
+                    client,
+                    caregiver,
+                    repeatType
+            );
+
+            appointment.setRecurringGroupCreatedAt(recurringGroupCreatedAt);
+            appointments.add(appointment);
+
+            if ("DAILY".equals(repeatType)) {
+                currentStart = currentStart.plusDays(1);
+                currentEnd = currentEnd.plusDays(1);
+            } else {
+                currentStart = currentStart.plusWeeks(1);
+                currentEnd = currentEnd.plusWeeks(1);
+            }
+        }
+
+        return appointmentRepository.saveAll(appointments);
+    }
+
+    private AppointmentRequest copyRequestWithTimes(
+            AppointmentRequest original,
+            LocalDateTime start,
+            LocalDateTime end
+    ) {
+        AppointmentRequest copy = new AppointmentRequest();
+
+        copy.setClientId(original.getClientId());
+        copy.setCaregiverId(original.getCaregiverId());
+        copy.setStartTime(start);
+        copy.setEndTime(end);
+        copy.setServiceType(original.getServiceType());
+        copy.setShiftType(original.getShiftType());
+        copy.setStatus(original.getStatus());
+        copy.setEvvRequired(original.getEvvRequired());
+        copy.setBillable(original.getBillable());
+        copy.setRepeatType(original.getRepeatType());
+        copy.setRepeatUntil(original.getRepeatUntil());
+        copy.setNotes(original.getNotes());
+
+        return copy;
+    }
+
+    public AppointmentResponse getAppointmentById(Long id) {
+        Appointment appointment = appointmentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Appointment not found."));
+
+        return mapToResponse(appointment);
     }
 }

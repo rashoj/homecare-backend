@@ -69,6 +69,13 @@ public class Timesheet {
 
     private Boolean billable;
 
+    private Boolean authorizationOverride;
+
+    @Column(columnDefinition = "TEXT")
+    private String authorizationOverrideReason;
+
+    private LocalDateTime authorizationOverrideAt;
+
     @Column(columnDefinition = "TEXT")
     private String notes;
 

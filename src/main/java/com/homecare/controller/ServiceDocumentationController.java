@@ -3,6 +3,7 @@ package com.homecare.controller;
 import com.homecare.dto.ServiceDocumentationRequest;
 import com.homecare.dto.ServiceDocumentationResponse;
 import com.homecare.dto.ServiceDocumentationReviewRequest;
+import com.homecare.entity.ServiceDocumentationAuditLog;
 import com.homecare.service.ServiceDocumentationPdfService;
 import com.homecare.service.ServiceDocumentationService;
 import org.springframework.http.MediaType;
@@ -72,5 +73,9 @@ public class ServiceDocumentationController {
                 )
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdf);
+    }
+    @GetMapping("/{id}/audit-logs")
+    public ResponseEntity<List<ServiceDocumentationAuditLog>> getAuditLogs(@PathVariable Long id) {
+        return ResponseEntity.ok(serviceDocumentationService.getAuditLogs(id));
     }
 }

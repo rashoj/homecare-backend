@@ -5,9 +5,13 @@ import com.homecare.dto.ClockOutRequest;
 import com.homecare.dto.ClockRecordResponse;
 import com.homecare.entity.Appointment;
 import com.homecare.entity.ClockRecord;
+import com.homecare.entity.EVVException;
 import com.homecare.repository.AppointmentRepository;
 import com.homecare.repository.ClockRecordRepository;
+import com.homecare.repository.EVVAlertRepository;
+import com.homecare.repository.EVVExceptionRepository;
 import org.springframework.stereotype.Service;
+import com.homecare.service.EVVAlertService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -18,11 +22,19 @@ public class ClockRecordService {
 
     private final ClockRecordRepository clockRecordRepository;
     private final AppointmentRepository appointmentRepository;
+    private final EVVExceptionRepository evvExceptionRepository;
+    private final EVVAlertService evvAlertService;
 
-    public ClockRecordService(ClockRecordRepository clockRecordRepository,
-                              AppointmentRepository appointmentRepository) {
+    public ClockRecordService(
+            ClockRecordRepository clockRecordRepository,
+            AppointmentRepository appointmentRepository,
+            EVVExceptionRepository evvExceptionRepository,
+            EVVAlertService evvAlertService
+    ) {
         this.clockRecordRepository = clockRecordRepository;
         this.appointmentRepository = appointmentRepository;
+        this.evvExceptionRepository = evvExceptionRepository;
+        this.evvAlertService = evvAlertService;
     }
 
     public ClockRecordResponse clockIn(ClockInRequest request) {
@@ -43,11 +55,15 @@ public class ClockRecordService {
                 .status("CLOCKED_IN")
                 .build();
 
+        ClockRecord savedClockRecord = clockRecordRepository.save(clockRecord);
+
+        createClockInExceptionsIfNeeded(appointment, savedClockRecord, request);
+
         appointment.setStatus("IN_PROGRESS");
         appointment.setCompleted(false);
         appointmentRepository.save(appointment);
 
-        return mapToResponse(clockRecordRepository.save(clockRecord));
+        return mapToResponse(savedClockRecord);
     }
 
     public ClockRecordResponse clockOut(ClockOutRequest request) {
@@ -68,12 +84,17 @@ public class ClockRecordService {
         long minutes = Duration.between(clockRecord.getClockInTime(), clockRecord.getClockOutTime()).toMinutes();
         clockRecord.setTotalHours(minutes / 60.0);
 
-        Appointment appointment = clockRecord.getAppointment();
+        ClockRecord savedClockRecord = clockRecordRepository.save(clockRecord);
+
+        Appointment appointment = savedClockRecord.getAppointment();
+
+        createClockOutExceptionsIfNeeded(appointment, savedClockRecord, request);
+
         appointment.setStatus("COMPLETED");
         appointment.setCompleted(true);
         appointmentRepository.save(appointment);
 
-        return mapToResponse(clockRecordRepository.save(clockRecord));
+        return mapToResponse(savedClockRecord);
     }
 
     public List<ClockRecordResponse> getAllClockRecords() {
@@ -88,6 +109,117 @@ public class ClockRecordService {
                 .orElseThrow(() -> new RuntimeException("Clock record not found"));
 
         return mapToResponse(clockRecord);
+    }
+
+    public List<ClockRecordResponse> getClockRecordsByClient(Long clientId) {
+        return clockRecordRepository.findByAppointmentClientId(clientId)
+                .stream()
+                .map(this::mapToResponse)
+                .toList();
+    }
+
+    private void createClockInExceptionsIfNeeded(
+            Appointment appointment,
+            ClockRecord clockRecord,
+            ClockInRequest request
+    ) {
+        if (request.getLatitude() == null || request.getLongitude() == null) {
+            createException(
+                    appointment,
+                    clockRecord,
+                    "GPS_MISSING",
+                    "HIGH",
+                    "Caregiver clocked in without GPS coordinates."
+            );
+        }
+
+        if (appointment.getStartTime() != null &&
+                clockRecord.getClockInTime().isAfter(appointment.getStartTime().plusMinutes(15))) {
+            createException(
+                    appointment,
+                    clockRecord,
+                    "LATE_CLOCK_IN",
+                    "MEDIUM",
+                    "Caregiver clocked in more than 15 minutes after scheduled start time."
+            );
+        }
+    }
+
+    private void createClockOutExceptionsIfNeeded(
+            Appointment appointment,
+            ClockRecord clockRecord,
+            ClockOutRequest request
+    ) {
+        if (request.getLatitude() == null || request.getLongitude() == null) {
+            createException(
+                    appointment,
+                    clockRecord,
+                    "GPS_MISSING",
+                    "HIGH",
+                    "Caregiver clocked out without GPS coordinates."
+            );
+
+        }
+
+        if (appointment.getEndTime() != null &&
+                clockRecord.getClockOutTime().isBefore(appointment.getEndTime().minusMinutes(15))) {
+            createException(
+                    appointment,
+                    clockRecord,
+                    "EARLY_CLOCK_OUT",
+                    "MEDIUM",
+                    "Caregiver clocked out more than 15 minutes before scheduled end time."
+            );
+            long minutesWorked = Duration.between(
+                    clockRecord.getClockInTime(),
+                    clockRecord.getClockOutTime()
+            ).toMinutes();
+
+            if (minutesWorked < 15) {
+                createException(
+                        appointment,
+                        clockRecord,
+                        "SHORT_VISIT",
+                        "HIGH",
+                        "Visit duration was less than 15 minutes."
+                );
+            }
+        }
+    }
+
+    private void createException(
+            Appointment appointment,
+            ClockRecord clockRecord,
+            String exceptionType,
+            String severity,
+            String description
+    ) {
+        boolean alreadyExists = evvExceptionRepository
+                .existsByAppointmentIdAndClockRecordIdAndExceptionType(
+                        appointment.getId(),
+                        clockRecord.getId(),
+                        exceptionType
+                );
+
+        if (alreadyExists) {
+            return;
+        }
+
+        EVVException exception = EVVException.builder()
+                .appointment(appointment)
+                .clockRecord(clockRecord)
+                .client(appointment.getClient())
+                .caregiver(appointment.getCaregiver())
+                .exceptionType(exceptionType)
+                .severity(severity)
+                .status("OPEN")
+                .description(description)
+                .createdAt(LocalDateTime.now())
+                .build();
+
+        EVVException savedException = evvExceptionRepository.save(exception);
+
+        evvAlertService.createAlertFromException(savedException);
     }
 
     private ClockRecordResponse mapToResponse(ClockRecord clockRecord) {
@@ -110,11 +242,5 @@ public class ClockRecordService {
                 .clockInNotes(clockRecord.getClockInNotes())
                 .clockOutNotes(clockRecord.getClockOutNotes())
                 .build();
-    }
-    public List<ClockRecordResponse> getClockRecordsByClient(Long clientId) {
-        return clockRecordRepository.findByAppointmentClientId(clientId)
-                .stream()
-                .map(this::mapToResponse)
-                .toList();
     }
 }

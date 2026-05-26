@@ -19,4 +19,6 @@ public interface TimesheetRepository extends JpaRepository<Timesheet, Long> {
     List<Timesheet> findByPayrollStatusOrderByClockInTimeDesc(String payrollStatus);
 
     List<Timesheet> findByBillingStatusOrderByClockInTimeDesc(String billingStatus);
+
+    List<Timesheet> findByAuthorizationId(Long authorizationId);
 }

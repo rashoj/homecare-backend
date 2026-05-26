@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 
 @Service
 public class CaregiverAssignmentService {
@@ -21,13 +22,25 @@ public class CaregiverAssignmentService {
 
     public CaregiverAssignmentResponse getTodayAssignment(Long caregiverId) {
 
+        List<String> activeStatuses = List.of("SCHEDULED", "IN_PROGRESS");
+
         Appointment appointment = appointmentRepository
-                .findFirstByCaregiverIdAndStartTimeBetweenOrderByStartTimeAsc(
+                .findFirstByCaregiverIdAndStartTimeBetweenAndStatusInOrderByStartTimeDesc(
                         caregiverId,
                         LocalDate.now().atStartOfDay(),
-                        LocalDate.now().atTime(LocalTime.MAX)
+                        LocalDate.now().atTime(LocalTime.MAX),
+                        activeStatuses
                 )
-                .orElseThrow(() -> new RuntimeException("No active appointment found for today."));
+                .orElseGet(() ->
+                        appointmentRepository
+                                .findFirstByCaregiverIdAndStartTimeBetweenOrderByStartTimeDesc(
+                                        caregiverId,
+                                        LocalDate.now().atStartOfDay(),
+                                        LocalDate.now().atTime(LocalTime.MAX)
+                                )
+                                .orElseThrow(() -> new RuntimeException("No appointment found for today."))
+                );
+
 
         return new CaregiverAssignmentResponse(
                 appointment.getId(),

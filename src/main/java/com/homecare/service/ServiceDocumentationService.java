@@ -1,18 +1,12 @@
 package com.homecare.service;
 
-import com.homecare.dto.ServiceDocumentationRequest;
-import com.homecare.dto.ServiceDocumentationResponse;
-import com.homecare.dto.ServiceDocumentationReviewRequest;
-import com.homecare.entity.Appointment;
-import com.homecare.entity.ServiceDocumentation;
-import com.homecare.repository.AppointmentRepository;
-import com.homecare.repository.ServiceDocumentationRepository;
+import com.homecare.dto.*;
+import com.homecare.entity.*;
+import com.homecare.repository.*;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import com.homecare.entity.ClockRecord;
-import com.homecare.repository.ClockRecordRepository;
 
 @Service
 public class ServiceDocumentationService {
@@ -21,17 +15,29 @@ public class ServiceDocumentationService {
     private final AppointmentRepository appointmentRepository;
     private final ClockRecordRepository clockRecordRepository;
     private final TimesheetService timesheetService;
+    private final ServiceDocumentationAuditLogRepository auditLogRepository;
+    private final ISPGoalRepository ispGoalRepository;
+    private final ISPGoalProgressLogRepository ispGoalProgressLogRepository;
+    private final BehaviorEventRepository behaviorEventRepository;
 
     public ServiceDocumentationService(
             ServiceDocumentationRepository serviceDocumentationRepository,
             AppointmentRepository appointmentRepository,
             ClockRecordRepository clockRecordRepository,
-            TimesheetService timesheetService
+            TimesheetService timesheetService,
+            ServiceDocumentationAuditLogRepository auditLogRepository,
+            ISPGoalRepository ispGoalRepository,
+            ISPGoalProgressLogRepository ispGoalProgressLogRepository,
+            BehaviorEventRepository behaviorEventRepository
     ) {
         this.serviceDocumentationRepository = serviceDocumentationRepository;
         this.appointmentRepository = appointmentRepository;
         this.clockRecordRepository = clockRecordRepository;
         this.timesheetService = timesheetService;
+        this.auditLogRepository = auditLogRepository;
+        this.ispGoalRepository = ispGoalRepository;
+        this.ispGoalProgressLogRepository = ispGoalProgressLogRepository;
+        this.behaviorEventRepository = behaviorEventRepository;
     }
 
     public ServiceDocumentationResponse submitDocumentation(ServiceDocumentationRequest request) {
@@ -65,7 +71,55 @@ public class ServiceDocumentationService {
                 .submittedAt(LocalDateTime.now())
                 .build();
 
-        return mapToResponse(serviceDocumentationRepository.save(documentation));
+        ServiceDocumentation savedDocumentation =
+                serviceDocumentationRepository.save(documentation);
+
+        if (request.getIspGoalProgress() != null) {
+            for (ISPGoalProgressSubmissionRequest progressRequest
+                    : request.getIspGoalProgress()) {
+
+                ISPGoal goal = ispGoalRepository.findById(progressRequest.getGoalId())
+                        .orElseThrow(() -> new RuntimeException("ISP goal not found."));
+
+                ISPGoalProgressLog progressLog = ISPGoalProgressLog.builder()
+                        .goal(goal)
+                        .client(appointment.getClient())
+                        .caregiver(appointment.getCaregiver())
+                        .appointment(appointment)
+                        .serviceDocumentation(savedDocumentation)
+                        .progressStatus(progressRequest.getProgressStatus())
+                        .promptLevel(progressRequest.getPromptLevel())
+                        .progressNote(progressRequest.getProgressNote())
+                        .createdAt(LocalDateTime.now())
+                        .build();
+
+                ispGoalProgressLogRepository.save(progressLog);
+            }
+            if (request.getBehaviorEvents() != null) {
+                for (BehaviorEventSubmissionRequest behaviorRequest
+                        : request.getBehaviorEvents()) {
+
+                    BehaviorEvent behaviorEvent = BehaviorEvent.builder()
+                            .client(appointment.getClient())
+                            .caregiver(appointment.getCaregiver())
+                            .appointment(appointment)
+                            .serviceDocumentation(savedDocumentation)
+                            .behaviorType(behaviorRequest.getBehaviorType())
+                            .trigger(behaviorRequest.getTrigger())
+                            .severity(behaviorRequest.getSeverity())
+                            .durationMinutes(behaviorRequest.getDurationMinutes())
+                            .interventionUsed(behaviorRequest.getInterventionUsed())
+                            .outcome(behaviorRequest.getOutcome())
+                            .notes(behaviorRequest.getNotes())
+                            .createdAt(LocalDateTime.now())
+                            .build();
+
+                    behaviorEventRepository.save(behaviorEvent);
+                }
+            }
+        }
+
+        return mapToResponse(savedDocumentation);
     }
 
     public ServiceDocumentationResponse reviewDocumentation(
@@ -79,27 +133,95 @@ public class ServiceDocumentationService {
             throw new RuntimeException("Finalized documentation is locked and cannot be changed.");
         }
 
-        if ("APPROVED".equalsIgnoreCase(request.getStatus())) {
-            documentation.setApprovedAt(LocalDateTime.now());
-            documentation.setLocked(true);
+        String oldStatus = documentation.getStatus();
+        LocalDateTime oldClockInTime = documentation.getCorrectedClockInTime();
+        LocalDateTime oldClockOutTime = documentation.getCorrectedClockOutTime();
 
+        String status = request.getStatus() != null
+                ? request.getStatus().toUpperCase()
+                : "REVIEWED";
+
+        documentation.setStatus(status);
+        documentation.setSupervisorComments(request.getSupervisorComments());
+
+        if ("APPROVED".equals(status)) {
             ClockRecord clockRecord = clockRecordRepository
                     .findByAppointmentId(documentation.getAppointment().getId())
                     .orElseThrow(() -> new RuntimeException(
                             "Cannot generate billing record. Clock record not found for this appointment."
                     ));
 
-            timesheetService.generateFromClockRecord(clockRecord.getId());
-        }
-        documentation.setStatus(request.getStatus().toUpperCase());
-        documentation.setSupervisorComments(request.getSupervisorComments());
+            LocalDateTime effectiveClockIn =
+                    request.getCorrectedClockInTime() != null
+                            ? request.getCorrectedClockInTime()
+                            : clockRecord.getClockInTime();
 
-        if ("APPROVED".equalsIgnoreCase(request.getStatus())) {
+            LocalDateTime effectiveClockOut =
+                    request.getCorrectedClockOutTime() != null
+                            ? request.getCorrectedClockOutTime()
+                            : clockRecord.getClockOutTime();
+
+            if (effectiveClockIn == null || effectiveClockOut == null) {
+                throw new RuntimeException("Clock-in and clock-out times are required before approval.");
+            }
+
+            if (effectiveClockOut.isBefore(effectiveClockIn)) {
+                throw new RuntimeException("Clock-out time cannot be before clock-in time.");
+            }
+
+            if (request.getCorrectedClockInTime() != null) {
+                clockRecord.setClockInTime(request.getCorrectedClockInTime());
+            }
+
+            if (request.getCorrectedClockOutTime() != null) {
+                clockRecord.setClockOutTime(request.getCorrectedClockOutTime());
+            }
+
+            long minutes = java.time.Duration.between(
+                    clockRecord.getClockInTime(),
+                    clockRecord.getClockOutTime()
+            ).toMinutes();
+
+            clockRecord.setTotalHours(minutes / 60.0);
+            clockRecordRepository.save(clockRecord);
+
+            documentation.setCorrectedClockInTime(request.getCorrectedClockInTime());
+            documentation.setCorrectedClockOutTime(request.getCorrectedClockOutTime());
+            documentation.setCorrectionReason(request.getCorrectionReason());
+            documentation.setTimeCorrectionApproved(
+                    request.getTimeCorrectionApproved() != null
+                            ? request.getTimeCorrectionApproved()
+                            : true
+            );
+
             documentation.setApprovedAt(LocalDateTime.now());
             documentation.setLocked(true);
+
+            timesheetService.generateFromClockRecord(clockRecord.getId());
         }
 
-        return mapToResponse(serviceDocumentationRepository.save(documentation));
+        ServiceDocumentation savedDocumentation =
+                serviceDocumentationRepository.save(documentation);
+
+        ServiceDocumentationAuditLog auditLog =
+                ServiceDocumentationAuditLog.builder()
+                        .documentationId(savedDocumentation.getId())
+                        .oldStatus(oldStatus)
+                        .newStatus(savedDocumentation.getStatus())
+                        .oldClockInTime(oldClockInTime)
+                        .oldClockOutTime(oldClockOutTime)
+                        .correctedClockInTime(savedDocumentation.getCorrectedClockInTime())
+                        .correctedClockOutTime(savedDocumentation.getCorrectedClockOutTime())
+                        .correctionReason(savedDocumentation.getCorrectionReason())
+                        .supervisorComments(savedDocumentation.getSupervisorComments())
+                        .timeCorrectionApproved(savedDocumentation.getTimeCorrectionApproved())
+                        .reviewedAt(LocalDateTime.now())
+                        .createdAt(LocalDateTime.now())
+                        .build();
+
+        auditLogRepository.save(auditLog);
+
+        return mapToResponse(savedDocumentation);
     }
 
     public List<ServiceDocumentationResponse> getDocumentationByClient(Long clientId) {
@@ -123,6 +245,10 @@ public class ServiceDocumentationService {
         return mapToResponse(documentation);
     }
 
+    public List<ServiceDocumentationAuditLog> getAuditLogs(Long documentationId) {
+        return auditLogRepository.findByDocumentationIdOrderByCreatedAtDesc(documentationId);
+    }
+
     private ServiceDocumentationResponse mapToResponse(ServiceDocumentation documentation) {
         return ServiceDocumentationResponse.builder()
                 .id(documentation.getId())
@@ -142,6 +268,10 @@ public class ServiceDocumentationService {
                 .supervisorComments(documentation.getSupervisorComments())
                 .submittedAt(documentation.getSubmittedAt())
                 .approvedAt(documentation.getApprovedAt())
+                .correctedClockInTime(documentation.getCorrectedClockInTime())
+                .correctedClockOutTime(documentation.getCorrectedClockOutTime())
+                .correctionReason(documentation.getCorrectionReason())
+                .timeCorrectionApproved(documentation.getTimeCorrectionApproved())
                 .build();
     }
 }

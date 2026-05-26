@@ -63,6 +63,15 @@ public class ServiceDocumentation {
 
     private LocalDateTime updatedAt;
 
+    private LocalDateTime correctedClockInTime;
+
+    private LocalDateTime correctedClockOutTime;
+
+    @Column(columnDefinition = "TEXT")
+    private String correctionReason;
+
+    private Boolean timeCorrectionApproved;
+
     @PrePersist
     public void onCreate() {
         this.createdAt = LocalDateTime.now();

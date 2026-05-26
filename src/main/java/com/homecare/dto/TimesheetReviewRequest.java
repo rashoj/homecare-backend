@@ -18,4 +18,8 @@ public class TimesheetReviewRequest {
     private Boolean billable;
 
     private String notes;
+
+    private Boolean authorizationOverride;
+
+    private String authorizationOverrideReason;
 }

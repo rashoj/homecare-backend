@@ -35,6 +35,10 @@ public class AppointmentResponse {
 
     private Boolean billable;
 
+    private String repeatType;
+
+    private LocalDateTime recurringGroupCreatedAt;
+
     private String notes;
 
     private Boolean completed;

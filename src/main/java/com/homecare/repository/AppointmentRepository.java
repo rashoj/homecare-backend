@@ -26,6 +26,18 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
     List<Appointment> findByClientIdAndCompletedTrue(Long clientId);
 
+    List<Appointment> findByCaregiverIdAndStartTimeLessThanAndEndTimeGreaterThan(
+            Long caregiverId,
+            LocalDateTime endTime,
+            LocalDateTime startTime
+    );
+
+    List<Appointment> findByClientIdAndStartTimeLessThanAndEndTimeGreaterThan(
+            Long clientId,
+            LocalDateTime endTime,
+            LocalDateTime startTime
+    );
+
 
 
 
@@ -39,5 +51,23 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             Long caregiverId,
             LocalDateTime start,
             LocalDateTime end
+    );
+    Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenOrderByStartTimeDesc(
+            Long caregiverId,
+            LocalDateTime start,
+            LocalDateTime end
+    );
+    Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenAndStatusInOrderByStartTimeAsc(
+            Long caregiverId,
+            LocalDateTime start,
+            LocalDateTime end,
+            List<String> statuses
+    );
+
+    Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenAndStatusInOrderByStartTimeDesc(
+            Long caregiverId,
+            LocalDateTime start,
+            LocalDateTime end,
+            List<String> statuses
     );
 }

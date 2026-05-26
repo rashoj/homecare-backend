@@ -44,4 +44,12 @@ public class ServiceDocumentationResponse {
     private LocalDateTime submittedAt;
 
     private LocalDateTime approvedAt;
+
+    private LocalDateTime correctedClockInTime;
+
+    private LocalDateTime correctedClockOutTime;
+
+    private String correctionReason;
+
+    private Boolean timeCorrectionApproved;
 }

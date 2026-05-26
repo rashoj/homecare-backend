@@ -44,6 +44,10 @@ public class Appointment {
 
     private Boolean billable;
 
+    private String repeatType;
+
+    private LocalDateTime recurringGroupCreatedAt;
+
     @Column(columnDefinition = "TEXT")
     private String notes;
 
@@ -76,6 +80,9 @@ public class Appointment {
 
         if (this.billable == null) {
             this.billable = true;
+        }
+        if (this.repeatType == null) {
+            this.repeatType = "NONE";
         }
     }
 

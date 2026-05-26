@@ -7,6 +7,7 @@ import com.homecare.entity.ClientAuthorization;
 import com.homecare.repository.ClientAuthorizationRepository;
 import com.homecare.repository.ClientRepository;
 import org.springframework.stereotype.Service;
+import com.homecare.repository.TimesheetRepository;
 
 import java.time.LocalDate;
 import java.util.List;
@@ -16,13 +17,16 @@ public class ClientAuthorizationService {
 
     private final ClientAuthorizationRepository authorizationRepository;
     private final ClientRepository clientRepository;
+    private final TimesheetRepository timesheetRepository;
 
     public ClientAuthorizationService(
             ClientAuthorizationRepository authorizationRepository,
-            ClientRepository clientRepository
+            ClientRepository clientRepository,
+            TimesheetRepository timesheetRepository
     ) {
         this.authorizationRepository = authorizationRepository;
         this.clientRepository = clientRepository;
+        this.timesheetRepository = timesheetRepository;
     }
 
     public ClientAuthorizationResponse createAuthorization(
@@ -113,9 +117,7 @@ public class ClientAuthorizationService {
                 ? authorization.getApprovedTotalHours()
                 : 0.0;
 
-        Double used = authorization.getUsedHours() != null
-                ? authorization.getUsedHours()
-                : 0.0;
+        Double used = calculateUsedHours(authorization.getId());
 
         Double remaining = approvedTotal - used;
 
@@ -131,7 +133,7 @@ public class ClientAuthorizationService {
                 .endDate(authorization.getEndDate())
                 .approvedWeeklyHours(authorization.getApprovedWeeklyHours())
                 .approvedTotalHours(authorization.getApprovedTotalHours())
-                .usedHours(authorization.getUsedHours())
+                .usedHours(used)
                 .remainingHours(remaining)
                 .status(authorization.getStatus())
                 .alertStatus(alertStatus)
@@ -158,5 +160,12 @@ public class ClientAuthorizationService {
         }
 
         return "OK";
+    }
+    private Double calculateUsedHours(Long authorizationId) {
+        return timesheetRepository.findByAuthorizationId(authorizationId)
+                .stream()
+                .filter(timesheet -> timesheet.getTotalHours() != null)
+                .mapToDouble(timesheet -> timesheet.getTotalHours())
+                .sum();
     }
 }

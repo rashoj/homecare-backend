@@ -48,4 +48,8 @@ public class AppointmentController {
 
         return appointmentService.getAppointmentsByCaregiver(caregiverId);
     }
+    @GetMapping("/{id}")
+    public AppointmentResponse getAppointmentById(@PathVariable Long id) {
+        return appointmentService.getAppointmentById(id);
+    }
 }

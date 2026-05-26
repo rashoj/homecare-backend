@@ -3,6 +3,7 @@ package com.homecare.config;
 import com.homecare.security.JwtAuthenticationFilter;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.dao.DaoAuthenticationProvider;
@@ -34,9 +35,15 @@ public class SecurityConfig {
         org.springframework.web.cors.CorsConfiguration configuration =
                 new org.springframework.web.cors.CorsConfiguration();
 
-        configuration.setAllowedOrigins(java.util.List.of("http://localhost:5173", "https://homecare-admin-dashboard.vercel.app"
+        configuration.setAllowedOrigins(java.util.List.of(
+                "http://localhost:5173",
+                "https://homecare-admin-dashboard.vercel.app"
         ));
-        configuration.setAllowedMethods(java.util.List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
+
+        configuration.setAllowedMethods(java.util.List.of(
+                "GET", "POST", "PUT", "DELETE", "OPTIONS"
+        ));
+
         configuration.setAllowedHeaders(java.util.List.of("*"));
         configuration.setAllowCredentials(true);
 
@@ -58,27 +65,32 @@ public class SecurityConfig {
                 .httpBasic(basic -> basic.disable())
                 .authorizeHttpRequests(auth -> auth
 
+                        // Public
                         .requestMatchers("/api/auth/**", "/api/test").permitAll()
-
                         .requestMatchers(
                                 "/swagger-ui/**",
                                 "/swagger-ui.html",
                                 "/v3/api-docs/**"
                         ).permitAll()
 
-                     //   .requestMatchers("/api/debug/me").authenticated()
+                        // Authenticated test/debug
                         .requestMatchers("/api/secure-test").authenticated()
 
-                        .requestMatchers("/api/clients/**").hasRole("ADMIN")
+                        // Clients
+                        .requestMatchers("/api/clients/**")
+                        .hasRole("ADMIN")
 
+                        // Caregiver portal / caregiver data
                         .requestMatchers("/api/caregivers/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
-                        .requestMatchers("/api/client-caregivers/**").hasRole("ADMIN")
+                        .requestMatchers("/api/client-caregivers/**")
+                        .hasRole("ADMIN")
 
                         .requestMatchers("/api/caregiver/assignments/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
+                        // Appointments / EVV / clock
                         .requestMatchers("/api/appointments/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
@@ -88,26 +100,86 @@ public class SecurityConfig {
                         .requestMatchers("/api/visit-notes/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
-                        .requestMatchers("/api/medications/**")
+                        // Medication / MAR supervisor endpoints - admin only
+                        .requestMatchers(
+                                "/api/medications/mar/alerts",
+                                "/api/medications/mar/review",
+                                "/api/medications/mar/compliance-summary",
+                                "/api/medications/mar/actions/**"
+                        )
+                        .hasRole("ADMIN")
+
+                        // Medication pass - caregiver/admin
+                        .requestMatchers(
+                                "/api/medications/mar/client/*/due",
+                                "/api/medications/logs"
+                        )
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
+                        // Medication management - admin only
+                        .requestMatchers("/api/medications/**")
+                        .hasRole("ADMIN")
+
+                        // Documents
                         .requestMatchers("/api/documents/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
+                        // Service documentation submit - caregiver/admin
+                        .requestMatchers(HttpMethod.POST, "/api/service-documentation")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        // Service documentation review/history - admin
                         .requestMatchers("/api/service-documentation/**")
+                        .hasRole("ADMIN")
+
+                        // Incidents
+                        .requestMatchers(HttpMethod.POST, "/api/incidents/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
                         .requestMatchers("/api/incidents/**")
-                        .hasAnyRole("ADMIN", "CAREGIVER")
+                        .hasRole("ADMIN")
 
-                        .requestMatchers("/api/dashboard/admin").hasRole("ADMIN")
+                        // Dashboards
+                        .requestMatchers("/api/dashboard/admin")
+                        .hasRole("ADMIN")
 
                         .requestMatchers("/api/dashboard/caregiver/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
+                        .requestMatchers("/api/admin-operations-dashboard/**")
+                        .hasRole("ADMIN")
+
+                        // Notifications
                         .requestMatchers("/api/notifications/**")
                         .hasAnyRole("ADMIN", "CAREGIVER", "FAMILY_MEMBER")
 
+                        // ISP - caregiver can read active goals only, admin controls everything else
+                        .requestMatchers(HttpMethod.GET, "/api/isp/client/*/goals/active")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers("/api/isp/service-documentation/**")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers("/api/isp/**")
+                        .hasRole("ADMIN")
+
+                        // Behavior events
+                        .requestMatchers(HttpMethod.POST, "/api/behavior-events")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers("/api/behavior-events/options/**")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers("/api/behavior-events/client/**")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers("/api/behavior-events/service-documentation/**")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers("/api/behavior-events/**")
+                        .hasRole("ADMIN")
+
+                        // Admin-only modules
                         .requestMatchers("/api/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/payroll/**").hasRole("ADMIN")
                         .requestMatchers("/api/client-payroll/**").hasRole("ADMIN")
@@ -117,6 +189,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/risk/**").hasRole("ADMIN")
                         .requestMatchers("/api/authorizations/**").hasRole("ADMIN")
                         .requestMatchers("/api/timesheets/**").hasRole("ADMIN")
+                        .requestMatchers("/api/evv-alerts/**").hasRole("ADMIN")
+                        .requestMatchers("/api/evv-exceptions/**").hasRole("ADMIN")
 
                         .anyRequest().authenticated()
                 )
@@ -124,7 +198,10 @@ public class SecurityConfig {
                         session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
                 )
                 .authenticationProvider(authenticationProvider())
-                .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(
+                        jwtAuthenticationFilter,
+                        UsernamePasswordAuthenticationFilter.class
+                );
 
         return http.build();
     }

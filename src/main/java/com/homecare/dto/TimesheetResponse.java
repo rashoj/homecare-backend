@@ -48,4 +48,8 @@ public class TimesheetResponse {
     private String notes;
 
     private LocalDateTime reviewedAt;
+
+    private Boolean authorizationOverride;
+    private String authorizationOverrideReason;
+    private LocalDateTime authorizationOverrideAt;
 }

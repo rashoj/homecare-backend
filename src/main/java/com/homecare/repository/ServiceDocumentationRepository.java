@@ -15,4 +15,5 @@ public interface ServiceDocumentationRepository extends JpaRepository<ServiceDoc
     List<ServiceDocumentation> findByClientIdOrderBySubmittedAtDesc(Long clientId);
 
     List<ServiceDocumentation> findByStatusOrderBySubmittedAtDesc(String status);
+    long countByStatus(String status);
 }

@@ -7,6 +7,7 @@ import com.homecare.repository.*;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -72,7 +73,23 @@ public class TimesheetService {
 
         ClientAuthorization authorization = findActiveAuthorization(client.getId());
 
-        boolean authorizationValid = authorization != null;
+        boolean authorizationValid = false;
+
+        if (authorization != null) {
+            double approvedTotal = authorization.getApprovedTotalHours() != null
+                    ? authorization.getApprovedTotalHours()
+                    : 0.0;
+
+            double alreadyUsed = timesheetRepository.findByAuthorizationId(authorization.getId())
+                    .stream()
+                    .filter(existing -> existing.getTotalHours() != null)
+                    .mapToDouble(Timesheet::getTotalHours)
+                    .sum();
+
+            double remaining = approvedTotal - alreadyUsed;
+
+            authorizationValid = remaining >= totalHours;
+        }
 
         Timesheet timesheet = Timesheet.builder()
                 .clockRecord(clockRecord)
@@ -90,7 +107,7 @@ public class TimesheetService {
                 .billingRate(0.0)
                 .billableAmount(0.0)
                 .payrollStatus("PENDING")
-                .billingStatus("PENDING")
+                .billingStatus(authorizationValid ? "PENDING" : "NEEDS_REVIEW")
                 .documentationApproved(documentationApproved)
                 .authorizationValid(authorizationValid)
                 .billable(documentationApproved && authorizationValid)
@@ -162,16 +179,36 @@ public class TimesheetService {
         timesheet.setNotes(request.getNotes());
         timesheet.setReviewedAt(LocalDateTime.now());
 
+        boolean wantsBillable = Boolean.TRUE.equals(request.getBillable());
+
+        if (Boolean.FALSE.equals(timesheet.getAuthorizationValid()) && wantsBillable) {
+
+            if (request.getAuthorizationOverrideReason() == null ||
+                    request.getAuthorizationOverrideReason().isBlank()) {
+                throw new RuntimeException(
+                        "Authorization override reason is required when approving an overused authorization."
+                );
+            }
+
+            timesheet.setAuthorizationOverride(true);
+            timesheet.setAuthorizationOverrideReason(request.getAuthorizationOverrideReason());
+            timesheet.setAuthorizationOverrideAt(LocalDateTime.now());
+        }
+
         return mapToResponse(timesheetRepository.save(timesheet));
     }
 
     private ClientAuthorization findActiveAuthorization(Long clientId) {
+        LocalDate today = LocalDate.now();
+
         return authorizationRepository
                 .findByClientIdAndStatusOrderByEndDateDesc(clientId, "ACTIVE")
                 .stream()
                 .filter(auth ->
-                        auth.getEndDate() != null &&
-                                !auth.getEndDate().isBefore(java.time.LocalDate.now())
+                        auth.getStartDate() != null &&
+                                auth.getEndDate() != null &&
+                                !auth.getStartDate().isAfter(today) &&
+                                !auth.getEndDate().isBefore(today)
                 )
                 .findFirst()
                 .orElse(null);
@@ -218,6 +255,9 @@ public class TimesheetService {
                 .billable(timesheet.getBillable())
                 .notes(timesheet.getNotes())
                 .reviewedAt(timesheet.getReviewedAt())
+                .authorizationOverride(timesheet.getAuthorizationOverride())
+                .authorizationOverrideReason(timesheet.getAuthorizationOverrideReason())
+                .authorizationOverrideAt(timesheet.getAuthorizationOverrideAt())
                 .build();
     }
 }
