@@ -26,4 +26,14 @@ public class AdminDashboardResponse {
     private Long totalVisitNotes;
 
     private Long totalClockRecords;
+
+    // NEW DEMO METRICS
+
+    private Long missedAppointments;
+
+    private Long openIncidents;
+
+    private Long pendingServiceDocumentation;
+
+    private Double marComplianceRate;
 }

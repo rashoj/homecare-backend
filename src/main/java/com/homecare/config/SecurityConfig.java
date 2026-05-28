@@ -154,7 +154,7 @@ public class SecurityConfig {
                         .hasAnyRole("ADMIN", "CAREGIVER", "FAMILY_MEMBER")
 
                         // ISP - caregiver can read active goals only, admin controls everything else
-                        .requestMatchers(HttpMethod.GET, "/api/isp/client/*/goals/active")
+                        .requestMatchers(HttpMethod.GET, "/api/isp/clients/*/goals/active")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
                         .requestMatchers("/api/isp/service-documentation/**")

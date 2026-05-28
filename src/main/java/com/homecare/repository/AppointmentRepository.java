@@ -9,12 +9,14 @@ import java.util.Optional;
 
 public interface AppointmentRepository extends JpaRepository<Appointment, Long> {
     long countByCompletedTrue();
-
+    long countByCompletedFalse();
     long countByCaregiverId(Long caregiverId);
 
     long countByCaregiverIdAndCompletedTrue(Long caregiverId);
 
     long countByCaregiverIdAndCompletedFalse(Long caregiverId);
+
+
 
     List<Appointment> findByClientId(Long clientId);
 
@@ -39,10 +41,7 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
     );
 
 
-
-
-
-//    Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenAndCompletedFalseOrderByStartTimeAsc(
+    //    Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenAndCompletedFalseOrderByStartTimeAsc(
 //            Long caregiverId,
 //            LocalDateTime start,
 //            LocalDateTime end
@@ -52,11 +51,13 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             LocalDateTime start,
             LocalDateTime end
     );
+
     Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenOrderByStartTimeDesc(
             Long caregiverId,
             LocalDateTime start,
             LocalDateTime end
     );
+
     Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenAndStatusInOrderByStartTimeAsc(
             Long caregiverId,
             LocalDateTime start,
@@ -70,4 +71,5 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             LocalDateTime end,
             List<String> statuses
     );
+
 }

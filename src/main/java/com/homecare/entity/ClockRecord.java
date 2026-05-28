@@ -53,13 +53,21 @@ public class ClockRecord {
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
-        this.status = "CLOCKED_IN";
+
+        if (this.status == null) {
+            this.status = "CLOCKED_IN";
+        }
+
+        calculateTotalHours();
     }
 
     @PreUpdate
     public void onUpdate() {
         this.updatedAt = LocalDateTime.now();
+        calculateTotalHours();
+    }
 
+    private void calculateTotalHours() {
         if (clockInTime != null && clockOutTime != null) {
             long minutes = Duration.between(clockInTime, clockOutTime).toMinutes();
             this.totalHours = minutes / 60.0;
