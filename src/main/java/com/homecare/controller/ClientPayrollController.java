@@ -18,8 +18,13 @@ public class ClientPayrollController {
     @GetMapping("/client/{clientId}")
     public ClientPayrollResponse calculateClientPayroll(
             @PathVariable Long clientId,
-            @RequestParam Double rate
+            @RequestParam Double rate,
+            @RequestParam Long actorUserId
     ) {
-        return clientPayrollService.calculateClientPayroll(clientId, rate);
+        return clientPayrollService.calculateClientPayroll(
+                clientId,
+                rate,
+                actorUserId
+        );
     }
 }

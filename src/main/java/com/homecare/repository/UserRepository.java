@@ -15,4 +15,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
     long countByRole(com.homecare.entity.Role role);
 
     List<User> findByRole(Role role);
+
+    // UserRepository
+    long countByRoleName(String roleName);
+
 }

@@ -1,11 +1,13 @@
 package com.homecare.service;
 
-import com.homecare.dto.AdminDashboardResponse;
-import com.homecare.dto.CaregiverDashboardResponse;
-import com.homecare.entity.Role;
-import com.homecare.entity.User;
+import com.homecare.dto.*;
+import com.homecare.entity.*;
 import com.homecare.repository.*;
 import org.springframework.stereotype.Service;
+
+import java.time.LocalDate;
+import java.util.Comparator;
+import java.util.List;
 
 @Service
 public class DashboardService {
@@ -20,6 +22,8 @@ public class DashboardService {
     private final MedicationLogRepository medicationLogRepository;
     private final IncidentRepository incidentRepository;
     private final ServiceDocumentationRepository serviceDocumentationRepository;
+    private final EVVExceptionRepository evvExceptionRepository;
+    private final AuditLogRepository auditLogRepository;
 
     public DashboardService(
             UserRepository userRepository,
@@ -31,7 +35,9 @@ public class DashboardService {
             ClockRecordRepository clockRecordRepository,
             MedicationLogRepository medicationLogRepository,
             IncidentRepository incidentRepository,
-            ServiceDocumentationRepository serviceDocumentationRepository
+            ServiceDocumentationRepository serviceDocumentationRepository,
+            EVVExceptionRepository evvExceptionRepository,
+            AuditLogRepository auditLogRepository
     ) {
         this.userRepository = userRepository;
         this.clientRepository = clientRepository;
@@ -43,6 +49,8 @@ public class DashboardService {
         this.medicationLogRepository = medicationLogRepository;
         this.incidentRepository = incidentRepository;
         this.serviceDocumentationRepository = serviceDocumentationRepository;
+        this.evvExceptionRepository = evvExceptionRepository;
+        this.auditLogRepository = auditLogRepository;
     }
 
     public AdminDashboardResponse getAdminDashboard() {
@@ -53,9 +61,7 @@ public class DashboardService {
                         + medicationLogRepository.countByStatus("ADMINISTERED");
 
         double marComplianceRate =
-                totalMARLogs == 0
-                        ? 0
-                        : ((double) administered / totalMARLogs) * 100;
+                totalMARLogs == 0 ? 0 : ((double) administered / totalMARLogs) * 100;
 
         return AdminDashboardResponse.builder()
                 .totalUsers(userRepository.count())
@@ -69,9 +75,7 @@ public class DashboardService {
                 .totalClockRecords(clockRecordRepository.count())
                 .missedAppointments(appointmentRepository.countByCompletedFalse())
                 .openIncidents(incidentRepository.countByStatus("UNDER_REVIEW"))
-                .pendingServiceDocumentation(
-                        serviceDocumentationRepository.countByStatus("SUBMITTED")
-                )
+                .pendingServiceDocumentation(serviceDocumentationRepository.countByStatus("SUBMITTED"))
                 .marComplianceRate(Math.round(marComplianceRate * 100.0) / 100.0)
                 .build();
     }
@@ -84,17 +88,137 @@ public class DashboardService {
                 .caregiverId(caregiver.getId())
                 .caregiverName(caregiver.getFullName())
                 .todayAppointments(appointmentRepository.countByCaregiverId(caregiverId))
-                .completedAppointments(
-                        appointmentRepository.countByCaregiverIdAndCompletedTrue(caregiverId)
-                )
-                .pendingAppointments(
-                        appointmentRepository.countByCaregiverIdAndCompletedFalse(caregiverId)
-                )
+                .completedAppointments(appointmentRepository.countByCaregiverIdAndCompletedTrue(caregiverId))
+                .pendingAppointments(appointmentRepository.countByCaregiverIdAndCompletedFalse(caregiverId))
                 .totalVisitNotes(visitNoteRepository.countByCaregiverId(caregiverId))
-                .totalClockRecords(
-                        clockRecordRepository.countByAppointmentCaregiverId(caregiverId)
-                )
+                .totalClockRecords(clockRecordRepository.countByAppointmentCaregiverId(caregiverId))
                 .medicationLogs(medicationLogRepository.countByCaregiverId(caregiverId))
                 .build();
+    }
+
+    public List<DashboardTrendResponse> getVisitTrends() {
+        return last7Days().stream()
+                .map(day -> {
+                    long completed = appointmentRepository.findAll().stream()
+                            .filter(a -> a.getStartTime() != null)
+                            .filter(a -> a.getStartTime().toLocalDate().equals(day))
+                            .filter(a -> Boolean.TRUE.equals(a.getCompleted()))
+                            .count();
+
+                    long missed = appointmentRepository.findAll().stream()
+                            .filter(a -> a.getStartTime() != null)
+                            .filter(a -> a.getStartTime().toLocalDate().equals(day))
+                            .filter(a -> Boolean.FALSE.equals(a.getCompleted()))
+                            .count();
+
+                    return DashboardTrendResponse.builder()
+                            .label(day.getDayOfWeek().toString().substring(0, 3))
+                            .completed(completed)
+                            .missed(missed)
+                            .build();
+                })
+                .toList();
+    }
+
+    public List<DashboardTrendResponse> getMarTrends() {
+        return last7Days().stream()
+                .map(day -> {
+                    List<MedicationLog> logsForDay = medicationLogRepository.findAll().stream()
+                            .filter(log -> log.getScheduledAt() != null)
+                            .filter(log -> log.getScheduledAt().toLocalDate().equals(day))
+                            .toList();
+
+                    long total = logsForDay.size();
+
+                    long given = logsForDay.stream()
+                            .filter(log ->
+                                    "GIVEN".equalsIgnoreCase(log.getStatus()) ||
+                                            "ADMINISTERED".equalsIgnoreCase(log.getStatus())
+                            )
+                            .count();
+
+                    double rate = total == 0 ? 100.0 : (given * 100.0) / total;
+
+                    return DashboardTrendResponse.builder()
+                            .label(day.getDayOfWeek().toString().substring(0, 3))
+                            .rate(Math.round(rate * 100.0) / 100.0)
+                            .build();
+                })
+                .toList();
+    }
+
+    public List<DashboardBreakdownResponse> getIncidentSeverity() {
+        return List.of(
+                DashboardBreakdownResponse.builder()
+                        .name("LOW")
+                        .value(incidentRepository.findAll().stream()
+                                .filter(i -> "LOW".equalsIgnoreCase(i.getSeverity()))
+                                .count())
+                        .build(),
+                DashboardBreakdownResponse.builder()
+                        .name("MEDIUM")
+                        .value(incidentRepository.findAll().stream()
+                                .filter(i -> "MEDIUM".equalsIgnoreCase(i.getSeverity()))
+                                .count())
+                        .build(),
+                DashboardBreakdownResponse.builder()
+                        .name("HIGH")
+                        .value(incidentRepository.findAll().stream()
+                                .filter(i -> "HIGH".equalsIgnoreCase(i.getSeverity()))
+                                .count())
+                        .build(),
+                DashboardBreakdownResponse.builder()
+                        .name("CRITICAL")
+                        .value(incidentRepository.findAll().stream()
+                                .filter(i -> "CRITICAL".equalsIgnoreCase(i.getSeverity()))
+                                .count())
+                        .build()
+        );
+    }
+
+    public List<DashboardTrendResponse> getEVVTrends() {
+        return last7Days().stream()
+                .map(day -> {
+                    long exceptions = evvExceptionRepository.findAll().stream()
+                            .filter(e -> e.getCreatedAt() != null)
+                            .filter(e -> e.getCreatedAt().toLocalDate().equals(day))
+                            .count();
+
+                    return DashboardTrendResponse.builder()
+                            .label(day.getDayOfWeek().toString().substring(0, 3))
+                            .exceptions(exceptions)
+                            .build();
+                })
+                .toList();
+    }
+
+    public List<RecentActivityResponse> getRecentActivity() {
+        return auditLogRepository.findAll().stream()
+                .sorted(Comparator.comparing(AuditLog::getCreatedAt).reversed())
+                .limit(8)
+                .map(log -> RecentActivityResponse.builder()
+                        .id(log.getId())
+                        .action(log.getAction())
+                        .actorName(log.getActorName())
+                        .resourceType(log.getResourceType())
+                        .resourceId(log.getResourceId())
+                        .description(log.getDescription())
+                        .createdAt(log.getCreatedAt())
+                        .build())
+                .toList();
+    }
+
+    private List<LocalDate> last7Days() {
+        LocalDate today = LocalDate.now();
+
+        return List.of(
+                today.minusDays(6),
+                today.minusDays(5),
+                today.minusDays(4),
+                today.minusDays(3),
+                today.minusDays(2),
+                today.minusDays(1),
+                today
+        );
     }
 }

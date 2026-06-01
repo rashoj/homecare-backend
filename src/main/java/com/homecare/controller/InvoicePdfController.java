@@ -25,11 +25,16 @@ public class InvoicePdfController {
     @GetMapping("/client/{clientId}/pdf")
     public ResponseEntity<byte[]> generateClientInvoicePdf(
             @PathVariable Long clientId,
-            @RequestParam Double rate
+            @RequestParam Double rate,
+            @RequestParam Long actorUserId
     ) {
         try {
             ClientPayrollResponse payroll =
-                    clientPayrollService.calculateClientPayroll(clientId, rate);
+                    clientPayrollService.calculateClientPayroll(
+                            clientId,
+                            rate,
+                            actorUserId
+                    );
 
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
 
@@ -61,15 +66,13 @@ public class InvoicePdfController {
 
             document.close();
 
-            byte[] pdfBytes = outputStream.toByteArray();
-
             return ResponseEntity.ok()
                     .contentType(MediaType.APPLICATION_PDF)
                     .header(
                             HttpHeaders.CONTENT_DISPOSITION,
                             "attachment; filename=client-invoice-" + clientId + ".pdf"
                     )
-                    .body(pdfBytes);
+                    .body(outputStream.toByteArray());
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate invoice PDF: " + e.getMessage());

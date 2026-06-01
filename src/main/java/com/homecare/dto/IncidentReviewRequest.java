@@ -16,4 +16,6 @@ public class IncidentReviewRequest {
     private String correctiveAction;
 
     private String followUpRequired;
+
+
 }

@@ -3,6 +3,7 @@ package com.homecare.controller;
 import com.homecare.dto.AssignCaregiverRequest;
 import com.homecare.dto.ClientCaregiverResponse;
 import com.homecare.service.ClientCaregiverService;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -38,4 +39,5 @@ public class ClientCaregiverController {
     ) {
         return clientCaregiverService.deactivateAssignment(id);
     }
+
 }

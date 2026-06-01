@@ -58,8 +58,11 @@ public class ClientAuthorizationController {
     }
 
     @PutMapping("/{id}/close")
-    public String closeAuthorization(@PathVariable Long id) {
-        authorizationService.closeAuthorization(id);
+    public String closeAuthorization(
+            @PathVariable Long id,
+            @RequestParam Long actorUserId
+    ) {
+        authorizationService.closeAuthorization(id, actorUserId);
         return "Authorization closed successfully";
     }
 }

@@ -10,4 +10,6 @@ public interface MedicationRepository extends JpaRepository<Medication, Long> {
     List<Medication> findByClientIdAndActiveTrue(Long clientId);
 
     List<Medication> findByActiveTrue();
+
+    List<Medication> findByClientId(Long clientId);
 }

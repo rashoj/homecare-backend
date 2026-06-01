@@ -54,7 +54,10 @@ public class VisitNoteController {
         return visitNoteService.getVisitNotesByCaregiver(caregiverId);
     }
     @PutMapping("/{id}/regenerate-summary")
-    public VisitNoteResponse regenerateAiSummary(@PathVariable Long id) {
-        return visitNoteService.regenerateAiSummary(id);
+    public VisitNoteResponse regenerateAiSummary(
+            @PathVariable Long id,
+            @RequestBody VisitNoteRequest request
+    ) {
+        return visitNoteService.regenerateAiSummary(id, request);
     }
 }

@@ -22,4 +22,6 @@ public class TimesheetReviewRequest {
     private Boolean authorizationOverride;
 
     private String authorizationOverrideReason;
+    private Long actorUserId;
+
 }

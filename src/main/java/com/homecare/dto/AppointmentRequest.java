@@ -42,4 +42,7 @@ public class AppointmentRequest {
     private LocalDate repeatUntil;
 
     private String notes;
+
+    private Long createdByUserId;
+
 }

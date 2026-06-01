@@ -12,4 +12,5 @@ public class MARSupervisorActionRequest {
 
     private String actionStatus;
     private String supervisorNotes;
+    private Long actorUserId;
 }

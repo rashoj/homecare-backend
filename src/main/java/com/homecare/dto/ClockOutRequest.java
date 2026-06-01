@@ -14,4 +14,6 @@ public class ClockOutRequest {
     private Double longitude;
 
     private String notes;
+
+    private Long actorUserId;
 }

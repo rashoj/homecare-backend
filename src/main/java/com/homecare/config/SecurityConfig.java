@@ -100,6 +100,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/visit-notes/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
+                        .requestMatchers("/api/billing-records/**")
+                        .hasAnyRole("ADMIN", "SUPERVISOR", "FINANCE")
+
                         // Medication / MAR supervisor endpoints - admin only
                         .requestMatchers(
                                 "/api/medications/mar/alerts",
@@ -178,6 +181,52 @@ public class SecurityConfig {
 
                         .requestMatchers("/api/behavior-events/**")
                         .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.POST, "/api/appointment-referrals")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers(HttpMethod.GET, "/api/appointment-referrals/caregiver/**")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers("/api/appointment-referrals/**")
+                        .hasRole("ADMIN")
+                        .requestMatchers(HttpMethod.POST, "/api/appointment-referrals/*/convert")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.POST, "/api/appointment-reschedule-requests")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/client/**")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/caregiver/**")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/appointment/**")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers(HttpMethod.PUT, "/api/appointment-reschedule-requests/*/review")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers(HttpMethod.POST, "/api/audit-logs")
+                        .hasAnyRole("ADMIN", "CAREGIVER")
+
+                        .requestMatchers(HttpMethod.GET, "/api/audit-logs/**")
+                        .hasRole("ADMIN")
+
+                        .requestMatchers("/api/family-portal/**")
+                        .hasRole("FAMILY_MEMBER")
+
+                        .requestMatchers("/api/family-portal/**")
+                        .hasRole("FAMILY_MEMBER")
+
+                        .requestMatchers(HttpMethod.GET, "/api/documents/*/download")
+                        .hasAnyRole("ADMIN", "CAREGIVER", "FAMILY_MEMBER")
+
+
 
                         // Admin-only modules
                         .requestMatchers("/api/users/**").hasRole("ADMIN")

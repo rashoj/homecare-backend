@@ -10,4 +10,6 @@ public class AppointmentStatusUpdateRequest {
     private String status;
 
     private String notes;
+
+    private Long updatedByUserId;
 }

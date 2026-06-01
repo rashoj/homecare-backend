@@ -28,4 +28,6 @@ public class VisitNoteRequest {
     private Boolean incidentReported;
 
     private String incidentDetails;
+
+    private Long actorUserId;
 }

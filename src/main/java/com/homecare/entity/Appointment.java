@@ -57,6 +57,7 @@ public class Appointment {
 
     private LocalDateTime updatedAt;
 
+
     @PrePersist
     public void onCreate() {
         this.createdAt = LocalDateTime.now();

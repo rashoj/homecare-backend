@@ -24,4 +24,6 @@ public class ClientAuthorizationRequest {
     private Double approvedTotalHours;
 
     private String notes;
+
+    private Long actorUserId;
 }

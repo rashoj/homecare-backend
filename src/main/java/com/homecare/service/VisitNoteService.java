@@ -3,8 +3,10 @@ package com.homecare.service;
 import com.homecare.dto.VisitNoteRequest;
 import com.homecare.dto.VisitNoteResponse;
 import com.homecare.entity.Appointment;
+import com.homecare.entity.User;
 import com.homecare.entity.VisitNote;
 import com.homecare.repository.AppointmentRepository;
+import com.homecare.repository.UserRepository;
 import com.homecare.repository.VisitNoteRepository;
 import org.springframework.stereotype.Service;
 
@@ -15,20 +17,30 @@ public class VisitNoteService {
 
     private final VisitNoteRepository visitNoteRepository;
     private final AppointmentRepository appointmentRepository;
+    private final UserRepository userRepository;
     private final AiSummaryService aiSummaryService;
+    private final AuditLogService auditLogService;
 
-    public VisitNoteService(VisitNoteRepository visitNoteRepository,
-                            AppointmentRepository appointmentRepository,
-                            AiSummaryService aiSummaryService) {
+    public VisitNoteService(
+            VisitNoteRepository visitNoteRepository,
+            AppointmentRepository appointmentRepository,
+            UserRepository userRepository,
+            AiSummaryService aiSummaryService,
+            AuditLogService auditLogService
+    ) {
         this.visitNoteRepository = visitNoteRepository;
         this.appointmentRepository = appointmentRepository;
+        this.userRepository = userRepository;
         this.aiSummaryService = aiSummaryService;
+        this.auditLogService = auditLogService;
     }
 
     public VisitNoteResponse createVisitNote(VisitNoteRequest request) {
-
         Appointment appointment = appointmentRepository.findById(request.getAppointmentId())
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
+
+        User actor = userRepository.findById(request.getActorUserId())
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
 
         if (visitNoteRepository.existsByAppointmentId(request.getAppointmentId())) {
             throw new RuntimeException("Visit note already exists for this appointment");
@@ -50,41 +62,32 @@ public class VisitNoteService {
                 .incidentDetails(request.getIncidentDetails())
                 .build();
 
-        String combinedNote = """
-                General Notes: %s
-                Meals: %s
-                Medication Notes: %s
-                Mobility Notes: %s
-                Mood Notes: %s
-                Hygiene Care: %s
-                Safety Concerns: %s
-                Family Update: %s
-                Incident Reported: %s
-                Incident Details: %s
-                """.formatted(
-                request.getGeneralNotes(),
-                request.getMeals(),
-                request.getMedicationNotes(),
-                request.getMobilityNotes(),
-                request.getMoodNotes(),
-                request.getHygieneCare(),
-                request.getSafetyConcerns(),
-                request.getFamilyUpdate(),
-                request.getIncidentReported(),
-                request.getIncidentDetails()
+        visitNote.setAiSummary(
+                aiSummaryService.generateVisitSummary(buildCombinedNote(request))
         );
 
-        String aiSummary = aiSummaryService.generateVisitSummary(combinedNote);
+        VisitNote savedVisitNote = visitNoteRepository.save(visitNote);
 
-        visitNote.setAiSummary(aiSummary);
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                appointment.getClient().getId(),
+                "CREATE_VISIT_NOTE",
+                "VISIT_NOTE",
+                savedVisitNote.getId(),
+                "Visit note created."
+        );
 
-        return mapToResponse(visitNoteRepository.save(visitNote));
+        return mapToResponse(savedVisitNote);
     }
 
     public VisitNoteResponse updateVisitNote(Long id, VisitNoteRequest request) {
-
         VisitNote visitNote = visitNoteRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Visit note not found"));
+
+        User actor = userRepository.findById(request.getActorUserId())
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
 
         visitNote.setGeneralNotes(request.getGeneralNotes());
         visitNote.setMeals(request.getMeals());
@@ -97,35 +100,51 @@ public class VisitNoteService {
         visitNote.setIncidentReported(request.getIncidentReported());
         visitNote.setIncidentDetails(request.getIncidentDetails());
 
-        String combinedNote = """
-                General Notes: %s
-                Meals: %s
-                Medication Notes: %s
-                Mobility Notes: %s
-                Mood Notes: %s
-                Hygiene Care: %s
-                Safety Concerns: %s
-                Family Update: %s
-                Incident Reported: %s
-                Incident Details: %s
-                """.formatted(
-                request.getGeneralNotes(),
-                request.getMeals(),
-                request.getMedicationNotes(),
-                request.getMobilityNotes(),
-                request.getMoodNotes(),
-                request.getHygieneCare(),
-                request.getSafetyConcerns(),
-                request.getFamilyUpdate(),
-                request.getIncidentReported(),
-                request.getIncidentDetails()
+        visitNote.setAiSummary(
+                aiSummaryService.generateVisitSummary(buildCombinedNote(request))
         );
 
-        String aiSummary = aiSummaryService.generateVisitSummary(combinedNote);
+        VisitNote savedVisitNote = visitNoteRepository.save(visitNote);
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                savedVisitNote.getClient().getId(),
+                "UPDATE_VISIT_NOTE",
+                "VISIT_NOTE",
+                savedVisitNote.getId(),
+                "Visit note updated."
+        );
+
+        return mapToResponse(savedVisitNote);
+    }
+
+    public VisitNoteResponse regenerateAiSummary(Long id, VisitNoteRequest request) {
+        VisitNote visitNote = visitNoteRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Visit note not found"));
+
+        User actor = userRepository.findById(request.getActorUserId())
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
+
+        String aiSummary = aiSummaryService.generateVisitSummary(buildCombinedNote(visitNote));
 
         visitNote.setAiSummary(aiSummary);
 
-        return mapToResponse(visitNoteRepository.save(visitNote));
+        VisitNote savedVisitNote = visitNoteRepository.save(visitNote);
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                savedVisitNote.getClient().getId(),
+                "REGENERATE_VISIT_NOTE_AI_SUMMARY",
+                "VISIT_NOTE",
+                savedVisitNote.getId(),
+                "Visit note AI summary regenerated."
+        );
+
+        return mapToResponse(savedVisitNote);
     }
 
     public List<VisitNoteResponse> getAllVisitNotes() {
@@ -138,6 +157,17 @@ public class VisitNoteService {
     public VisitNoteResponse getVisitNoteById(Long id) {
         VisitNote visitNote = visitNoteRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Visit note not found"));
+
+        auditLogService.logAction(
+                visitNote.getCaregiver().getId(),
+                visitNote.getCaregiver().getFullName(),
+                visitNote.getCaregiver().getRole().name(),
+                visitNote.getClient().getId(),
+                "VIEW_VISIT_NOTE",
+                "VISIT_NOTE",
+                visitNote.getId(),
+                "Visit note viewed."
+        );
 
         return mapToResponse(visitNote);
     }
@@ -163,6 +193,58 @@ public class VisitNoteService {
                 .toList();
     }
 
+    private String buildCombinedNote(VisitNoteRequest request) {
+        return """
+                General Notes: %s
+                Meals: %s
+                Medication Notes: %s
+                Mobility Notes: %s
+                Mood Notes: %s
+                Hygiene Care: %s
+                Safety Concerns: %s
+                Family Update: %s
+                Incident Reported: %s
+                Incident Details: %s
+                """.formatted(
+                request.getGeneralNotes(),
+                request.getMeals(),
+                request.getMedicationNotes(),
+                request.getMobilityNotes(),
+                request.getMoodNotes(),
+                request.getHygieneCare(),
+                request.getSafetyConcerns(),
+                request.getFamilyUpdate(),
+                request.getIncidentReported(),
+                request.getIncidentDetails()
+        );
+    }
+
+    private String buildCombinedNote(VisitNote visitNote) {
+        return """
+                General Notes: %s
+                Meals: %s
+                Medication Notes: %s
+                Mobility Notes: %s
+                Mood Notes: %s
+                Hygiene Care: %s
+                Safety Concerns: %s
+                Family Update: %s
+                Incident Reported: %s
+                Incident Details: %s
+                """.formatted(
+                visitNote.getGeneralNotes(),
+                visitNote.getMeals(),
+                visitNote.getMedicationNotes(),
+                visitNote.getMobilityNotes(),
+                visitNote.getMoodNotes(),
+                visitNote.getHygieneCare(),
+                visitNote.getSafetyConcerns(),
+                visitNote.getFamilyUpdate(),
+                visitNote.getIncidentReported(),
+                visitNote.getIncidentDetails()
+        );
+    }
+
     private VisitNoteResponse mapToResponse(VisitNote visitNote) {
         return VisitNoteResponse.builder()
                 .id(visitNote.getId())
@@ -185,40 +267,5 @@ public class VisitNoteService {
                 .createdAt(visitNote.getCreatedAt())
                 .updatedAt(visitNote.getUpdatedAt())
                 .build();
-    }
-
-    public VisitNoteResponse regenerateAiSummary(Long id) {
-        VisitNote visitNote = visitNoteRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Visit note not found"));
-
-        String combinedNote = """
-            General Notes: %s
-            Meals: %s
-            Medication Notes: %s
-            Mobility Notes: %s
-            Mood Notes: %s
-            Hygiene Care: %s
-            Safety Concerns: %s
-            Family Update: %s
-            Incident Reported: %s
-            Incident Details: %s
-            """.formatted(
-                visitNote.getGeneralNotes(),
-                visitNote.getMeals(),
-                visitNote.getMedicationNotes(),
-                visitNote.getMobilityNotes(),
-                visitNote.getMoodNotes(),
-                visitNote.getHygieneCare(),
-                visitNote.getSafetyConcerns(),
-                visitNote.getFamilyUpdate(),
-                visitNote.getIncidentReported(),
-                visitNote.getIncidentDetails()
-        );
-
-        String aiSummary = aiSummaryService.generateVisitSummary(combinedNote);
-
-        visitNote.setAiSummary(aiSummary);
-
-        return mapToResponse(visitNoteRepository.save(visitNote));
     }
 }

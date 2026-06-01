@@ -26,4 +26,5 @@ public class IncidentRequest {
     private String witnessStatement;
 
     private Boolean stateReportable;
+    private Long actorUserId;
 }

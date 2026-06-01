@@ -17,19 +17,22 @@ public class IncidentService {
     private final AppointmentRepository appointmentRepository;
     private final ClientRepository clientRepository;
     private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     public IncidentService(
             IncidentRepository incidentRepository,
             IncidentReviewRepository incidentReviewRepository,
             AppointmentRepository appointmentRepository,
             ClientRepository clientRepository,
-            UserRepository userRepository
+            UserRepository userRepository,
+            AuditLogService auditLogService
     ) {
         this.incidentRepository = incidentRepository;
         this.incidentReviewRepository = incidentReviewRepository;
         this.appointmentRepository = appointmentRepository;
         this.clientRepository = clientRepository;
         this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
     }
 
     public IncidentResponse createIncident(IncidentRequest request) {
@@ -38,6 +41,9 @@ public class IncidentService {
 
         User caregiver = userRepository.findById(request.getCaregiverId())
                 .orElseThrow(() -> new RuntimeException("Caregiver not found"));
+
+        User actor = userRepository.findById(request.getActorUserId())
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
 
         Appointment appointment = null;
 
@@ -62,7 +68,20 @@ public class IncidentService {
                 .stateReportable(Boolean.TRUE.equals(request.getStateReportable()))
                 .build();
 
-        return mapToResponse(incidentRepository.save(incident));
+        Incident savedIncident = incidentRepository.save(incident);
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                client.getId(),
+                "CREATE_INCIDENT",
+                "INCIDENT",
+                savedIncident.getId(),
+                "Incident created with severity " + savedIncident.getSeverity() + "."
+        );
+
+        return mapToResponse(savedIncident);
     }
 
     public List<IncidentResponse> getAllIncidents() {
@@ -90,6 +109,17 @@ public class IncidentService {
         Incident incident = incidentRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Incident not found"));
 
+        auditLogService.logAction(
+                incident.getCaregiver().getId(),
+                incident.getCaregiver().getFullName(),
+                incident.getCaregiver().getRole().name(),
+                incident.getClient().getId(),
+                "VIEW_INCIDENT",
+                "INCIDENT",
+                incident.getId(),
+                "Incident viewed."
+        );
+
         return mapToResponse(incident);
     }
 
@@ -97,12 +127,8 @@ public class IncidentService {
         Incident incident = incidentRepository.findById(incidentId)
                 .orElseThrow(() -> new RuntimeException("Incident not found"));
 
-        User reviewedBy = null;
-
-        if (request.getReviewedByUserId() != null) {
-            reviewedBy = userRepository.findById(request.getReviewedByUserId())
-                    .orElseThrow(() -> new RuntimeException("Reviewer not found"));
-        }
+        User reviewedBy = userRepository.findById(request.getReviewedByUserId())
+                .orElseThrow(() -> new RuntimeException("Reviewer not found"));
 
         IncidentReview review = incidentReviewRepository.findByIncidentId(incidentId)
                 .orElse(
@@ -121,10 +147,44 @@ public class IncidentService {
 
         incident.setStatus(status);
 
-        incidentReviewRepository.save(review);
-        incidentRepository.save(incident);
+        IncidentReview savedReview = incidentReviewRepository.save(review);
+        Incident savedIncident = incidentRepository.save(incident);
 
-        return mapToResponse(incident);
+        auditLogService.logAction(
+                reviewedBy.getId(),
+                reviewedBy.getFullName(),
+                reviewedBy.getRole().name(),
+                savedIncident.getClient().getId(),
+                getIncidentReviewAuditAction(status),
+                "INCIDENT",
+                savedIncident.getId(),
+                "Incident review updated to " + status + "."
+        );
+
+        auditLogService.logAction(
+                reviewedBy.getId(),
+                reviewedBy.getFullName(),
+                reviewedBy.getRole().name(),
+                savedIncident.getClient().getId(),
+                "CREATE_OR_UPDATE_INCIDENT_REVIEW",
+                "INCIDENT_REVIEW",
+                savedReview.getId(),
+                "Incident review record saved."
+        );
+
+        return mapToResponse(savedIncident);
+    }
+
+    private String getIncidentReviewAuditAction(String status) {
+        if ("RESOLVED".equals(status)) {
+            return "RESOLVE_INCIDENT";
+        }
+
+        if ("CLOSED".equals(status)) {
+            return "CLOSE_INCIDENT";
+        }
+
+        return "REVIEW_INCIDENT";
     }
 
     private IncidentResponse mapToResponse(Incident incident) {

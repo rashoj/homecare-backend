@@ -18,25 +18,46 @@ public class TimesheetService {
     private final ClockRecordRepository clockRecordRepository;
     private final ServiceDocumentationRepository serviceDocumentationRepository;
     private final ClientAuthorizationRepository authorizationRepository;
+    private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     public TimesheetService(
             TimesheetRepository timesheetRepository,
             ClockRecordRepository clockRecordRepository,
             ServiceDocumentationRepository serviceDocumentationRepository,
-            ClientAuthorizationRepository authorizationRepository
+            ClientAuthorizationRepository authorizationRepository,
+            UserRepository userRepository,
+            AuditLogService auditLogService
     ) {
         this.timesheetRepository = timesheetRepository;
         this.clockRecordRepository = clockRecordRepository;
         this.serviceDocumentationRepository = serviceDocumentationRepository;
         this.authorizationRepository = authorizationRepository;
+        this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
     }
 
     public TimesheetResponse generateFromClockRecord(Long clockRecordId) {
         if (timesheetRepository.existsByClockRecordId(clockRecordId)) {
-            return mapToResponse(
-                    timesheetRepository.findByClockRecordId(clockRecordId)
-                            .orElseThrow(() -> new RuntimeException("Timesheet not found."))
+
+            Timesheet existingTimesheet = timesheetRepository
+                    .findByClockRecordId(clockRecordId)
+                    .orElseThrow(() -> new RuntimeException("Timesheet not found."));
+
+            auditLogService.logAction(
+                    existingTimesheet.getCaregiver().getId(),
+                    existingTimesheet.getCaregiver().getFullName(),
+                    existingTimesheet.getCaregiver().getRole().name(),
+                    existingTimesheet.getClient().getId(),
+                    "VIEW_EXISTING_TIMESHEET",
+                    "TIMESHEET",
+                    existingTimesheet.getId(),
+                    "Existing timesheet returned for clock record "
+                            + clockRecordId
+                            + "."
             );
+
+            return mapToResponse(existingTimesheet);
         }
 
         ClockRecord clockRecord = clockRecordRepository.findById(clockRecordId)
@@ -111,10 +132,50 @@ public class TimesheetService {
                 .documentationApproved(documentationApproved)
                 .authorizationValid(authorizationValid)
                 .billable(documentationApproved && authorizationValid)
+                .authorizationOverride(false)
                 .notes(null)
                 .build();
 
-        return mapToResponse(timesheetRepository.save(timesheet));
+        Timesheet savedTimesheet = timesheetRepository.save(timesheet);
+
+        auditLogService.logAction(
+                caregiver.getId(),
+                caregiver.getFullName(),
+                caregiver.getRole().name(),
+                client.getId(),
+                "GENERATE_TIMESHEET",
+                "TIMESHEET",
+                savedTimesheet.getId(),
+                "Timesheet generated from clock record."
+        );
+
+        if (!documentationApproved) {
+            auditLogService.logAction(
+                    caregiver.getId(),
+                    caregiver.getFullName(),
+                    caregiver.getRole().name(),
+                    client.getId(),
+                    "TIMESHEET_DOCUMENTATION_NOT_APPROVED",
+                    "TIMESHEET",
+                    savedTimesheet.getId(),
+                    "Timesheet generated but service documentation is not approved."
+            );
+        }
+
+        if (!authorizationValid) {
+            auditLogService.logAction(
+                    caregiver.getId(),
+                    caregiver.getFullName(),
+                    caregiver.getRole().name(),
+                    client.getId(),
+                    "TIMESHEET_AUTHORIZATION_NEEDS_REVIEW",
+                    "TIMESHEET",
+                    savedTimesheet.getId(),
+                    "Timesheet generated but authorization is missing or insufficient."
+            );
+        }
+
+        return mapToResponse(savedTimesheet);
     }
 
     public List<TimesheetResponse> getAllTimesheets() {
@@ -145,6 +206,8 @@ public class TimesheetService {
         Timesheet timesheet = timesheetRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Timesheet not found."));
 
+        User actor = getActor(request.getActorUserId());
+
         double payRate = request.getCaregiverPayRate() != null
                 ? request.getCaregiverPayRate()
                 : 0.0;
@@ -152,6 +215,10 @@ public class TimesheetService {
         double billingRate = request.getBillingRate() != null
                 ? request.getBillingRate()
                 : 0.0;
+
+        String previousPayrollStatus = timesheet.getPayrollStatus();
+        String previousBillingStatus = timesheet.getBillingStatus();
+        Boolean previousBillable = timesheet.getBillable();
 
         timesheet.setCaregiverPayRate(payRate);
         timesheet.setBillingRate(billingRate);
@@ -182,7 +249,6 @@ public class TimesheetService {
         boolean wantsBillable = Boolean.TRUE.equals(request.getBillable());
 
         if (Boolean.FALSE.equals(timesheet.getAuthorizationValid()) && wantsBillable) {
-
             if (request.getAuthorizationOverrideReason() == null ||
                     request.getAuthorizationOverrideReason().isBlank()) {
                 throw new RuntimeException(
@@ -195,7 +261,83 @@ public class TimesheetService {
             timesheet.setAuthorizationOverrideAt(LocalDateTime.now());
         }
 
-        return mapToResponse(timesheetRepository.save(timesheet));
+        Timesheet savedTimesheet = timesheetRepository.save(timesheet);
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                savedTimesheet.getClient().getId(),
+                "REVIEW_TIMESHEET",
+                "TIMESHEET",
+                savedTimesheet.getId(),
+                "Timesheet reviewed."
+        );
+
+        if (!equalsIgnoreCase(previousPayrollStatus, savedTimesheet.getPayrollStatus())) {
+            auditLogService.logAction(
+                    actor.getId(),
+                    actor.getFullName(),
+                    actor.getRole().name(),
+                    savedTimesheet.getClient().getId(),
+                    getPayrollAuditAction(savedTimesheet.getPayrollStatus()),
+                    "TIMESHEET",
+                    savedTimesheet.getId(),
+                    "Payroll status changed from "
+                            + previousPayrollStatus
+                            + " to "
+                            + savedTimesheet.getPayrollStatus()
+                            + "."
+            );
+        }
+
+        if (!equalsIgnoreCase(previousBillingStatus, savedTimesheet.getBillingStatus())) {
+            auditLogService.logAction(
+                    actor.getId(),
+                    actor.getFullName(),
+                    actor.getRole().name(),
+                    savedTimesheet.getClient().getId(),
+                    getBillingAuditAction(savedTimesheet.getBillingStatus()),
+                    "TIMESHEET",
+                    savedTimesheet.getId(),
+                    "Billing status changed from "
+                            + previousBillingStatus
+                            + " to "
+                            + savedTimesheet.getBillingStatus()
+                            + "."
+            );
+        }
+
+        if (previousBillable == null ||
+                !previousBillable.equals(savedTimesheet.getBillable())) {
+            auditLogService.logAction(
+                    actor.getId(),
+                    actor.getFullName(),
+                    actor.getRole().name(),
+                    savedTimesheet.getClient().getId(),
+                    "UPDATE_TIMESHEET_BILLABLE_STATUS",
+                    "TIMESHEET",
+                    savedTimesheet.getId(),
+                    "Timesheet billable status changed to "
+                            + savedTimesheet.getBillable()
+                            + "."
+            );
+        }
+
+        if (Boolean.TRUE.equals(savedTimesheet.getAuthorizationOverride())) {
+            auditLogService.logAction(
+                    actor.getId(),
+                    actor.getFullName(),
+                    actor.getRole().name(),
+                    savedTimesheet.getClient().getId(),
+                    "AUTHORIZATION_OVERRIDE",
+                    "TIMESHEET",
+                    savedTimesheet.getId(),
+                    savedTimesheet.getAuthorizationOverrideReason()
+            );
+        }
+
+        return mapToResponse(savedTimesheet);
     }
 
     private ClientAuthorization findActiveAuthorization(Long clientId) {
@@ -215,17 +357,66 @@ public class TimesheetService {
     }
 
     private double calculateHours(LocalDateTime start, LocalDateTime end) {
-        long minutes = Duration.between(start, end).toMinutes();
 
-        if (minutes <= 0) {
+        long seconds = Duration.between(start, end).getSeconds();
+
+        if (seconds <= 0) {
             throw new RuntimeException("Invalid clock times.");
         }
 
-        return Math.round((minutes / 60.0) * 100.0) / 100.0;
+        return Math.round((seconds / 3600.0) * 100.0) / 100.0;
     }
 
     private double roundMoney(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    private User getActor(Long actorUserId) {
+        if (actorUserId == null) {
+            throw new RuntimeException("Actor user is required for audit logging.");
+        }
+
+        return userRepository.findById(actorUserId)
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
+    }
+
+    private boolean equalsIgnoreCase(String first, String second) {
+        if (first == null && second == null) {
+            return true;
+        }
+
+        if (first == null || second == null) {
+            return false;
+        }
+
+        return first.equalsIgnoreCase(second);
+    }
+
+    private String getPayrollAuditAction(String status) {
+        if (status == null) {
+            return "UPDATE_PAYROLL_STATUS";
+        }
+
+        return switch (status.toUpperCase()) {
+            case "APPROVED" -> "APPROVE_PAYROLL";
+            case "PAID" -> "MARK_PAYROLL_PAID";
+            case "REJECTED", "DENIED" -> "REJECT_PAYROLL";
+            default -> "UPDATE_PAYROLL_STATUS";
+        };
+    }
+
+    private String getBillingAuditAction(String status) {
+        if (status == null) {
+            return "UPDATE_BILLING_STATUS";
+        }
+
+        return switch (status.toUpperCase()) {
+            case "APPROVED" -> "APPROVE_BILLING";
+            case "BILLED" -> "MARK_BILLED";
+            case "DENIED", "REJECTED" -> "REJECT_BILLING";
+            case "NEEDS_REVIEW" -> "BILLING_NEEDS_REVIEW";
+            default -> "UPDATE_BILLING_STATUS";
+        };
     }
 
     private TimesheetResponse mapToResponse(Timesheet timesheet) {

@@ -15,4 +15,5 @@ public class MedicationRequest {
     private String frequency;
     private LocalTime scheduledTime;
     private String instructions;
+    private Long actorUserId;
 }

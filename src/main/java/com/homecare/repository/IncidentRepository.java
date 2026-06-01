@@ -26,4 +26,5 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
     long countByClientIdAndSeverity(Long clientId, String severity);
 
     long countByClientIdAndStateReportableTrue(Long clientId);
+    // IncidentRepository
 }

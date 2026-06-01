@@ -2,6 +2,7 @@ package com.homecare.service;
 
 import com.homecare.dto.AppointmentRequest;
 import com.homecare.dto.AppointmentResponse;
+import com.homecare.dto.AppointmentStatusUpdateRequest;
 import com.homecare.entity.Appointment;
 import com.homecare.entity.Client;
 import com.homecare.entity.User;
@@ -13,7 +14,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
 import java.util.List;
-import com.homecare.dto.AppointmentStatusUpdateRequest;
 
 @Service
 public class AppointmentService {
@@ -22,40 +22,38 @@ public class AppointmentService {
     private final ClientRepository clientRepository;
     private final UserRepository userRepository;
     private final ClientCaregiverRepository clientCaregiverRepository;
+    private final AuditLogService auditLogService;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             ClientRepository clientRepository,
             UserRepository userRepository,
-            ClientCaregiverRepository clientCaregiverRepository
+            ClientCaregiverRepository clientCaregiverRepository,
+            AuditLogService auditLogService
     ) {
         this.appointmentRepository = appointmentRepository;
         this.clientRepository = clientRepository;
         this.userRepository = userRepository;
         this.clientCaregiverRepository = clientCaregiverRepository;
+        this.auditLogService = auditLogService;
     }
 
     public AppointmentResponse createAppointment(AppointmentRequest request) {
-
         Client client = clientRepository.findById(request.getClientId())
                 .orElseThrow(() -> new RuntimeException("Client not found"));
 
         User caregiver = userRepository.findById(request.getCaregiverId())
                 .orElseThrow(() -> new RuntimeException("Caregiver not found"));
 
+        User actor = userRepository.findById(request.getCreatedByUserId())
+                .orElseThrow(() -> new RuntimeException("Creating user not found."));
+
         boolean assigned = clientCaregiverRepository
-                .existsByClientIdAndCaregiverIdAndActiveTrue(
-                        client.getId(),
-                        caregiver.getId()
-                );
+                .existsByClientIdAndCaregiverIdAndActiveTrue(client.getId(), caregiver.getId());
 
         if (!assigned) {
-            throw new RuntimeException(
-                    "Caregiver must be assigned to the client before scheduling."
-            );
-
+            throw new RuntimeException("Caregiver must be assigned to the client before scheduling.");
         }
-
 
         validateAppointmentTimes(request);
 
@@ -64,9 +62,22 @@ public class AppointmentService {
         if ("NONE".equals(repeatType)) {
             validateNoScheduleConflict(request);
 
-            Appointment appointment = buildAppointment(request, client, caregiver, repeatType);
+            Appointment savedAppointment = appointmentRepository.save(
+                    buildAppointment(request, client, caregiver, repeatType)
+            );
 
-            return mapToResponse(appointmentRepository.save(appointment));
+            auditLogService.logAction(
+                    actor.getId(),
+                    actor.getFullName(),
+                    actor.getRole().name(),
+                    client.getId(),
+                    "CREATE_APPOINTMENT",
+                    "APPOINTMENT",
+                    savedAppointment.getId(),
+                    "Appointment created."
+            );
+
+            return mapToResponse(savedAppointment);
         }
 
         List<Appointment> appointments = createRecurringAppointments(
@@ -76,9 +87,73 @@ public class AppointmentService {
                 repeatType
         );
 
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                client.getId(),
+                "CREATE_RECURRING_APPOINTMENTS",
+                "APPOINTMENT",
+                appointments.get(0).getId(),
+                "Recurring appointments created. Count: " + appointments.size()
+        );
+
         return mapToResponse(appointments.get(0));
     }
 
+    public AppointmentResponse updateAppointmentStatus(
+            Long appointmentId,
+            AppointmentStatusUpdateRequest request
+    ) {
+        Appointment appointment = appointmentRepository.findById(appointmentId)
+                .orElseThrow(() -> new RuntimeException("Appointment not found"));
+
+        User actor = userRepository.findById(request.getUpdatedByUserId())
+                .orElseThrow(() -> new RuntimeException("Updating user not found."));
+
+        String previousStatus = appointment.getStatus();
+
+        String status = request.getStatus() != null
+                ? request.getStatus().toUpperCase()
+                : appointment.getStatus();
+
+        appointment.setStatus(status);
+        appointment.setCompleted("COMPLETED".equals(status));
+
+        if (request.getNotes() != null && !request.getNotes().isBlank()) {
+            appointment.setNotes(request.getNotes());
+        }
+
+        Appointment savedAppointment = appointmentRepository.save(appointment);
+
+        String action = "UPDATE_APPOINTMENT_STATUS";
+
+        if ("COMPLETED".equals(status)) {
+            action = "COMPLETE_APPOINTMENT";
+        } else if ("CANCELLED".equals(status)) {
+            action = "CANCEL_APPOINTMENT";
+        }
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                savedAppointment.getClient().getId(),
+                action,
+                "APPOINTMENT",
+                savedAppointment.getId(),
+                "Appointment status changed from " + previousStatus + " to " + status + "."
+        );
+
+        return mapToResponse(savedAppointment);
+    }
+
+    public AppointmentResponse getAppointmentById(Long id) {
+        Appointment appointment = appointmentRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Appointment not found."));
+
+        return mapToResponse(appointment);
+    }
 
     public List<AppointmentResponse> getAllAppointments() {
         return appointmentRepository.findAll()
@@ -111,60 +186,6 @@ public class AppointmentService {
         }
     }
 
-    private String defaultValue(String value, String fallback) {
-        if (value == null || value.isBlank()) {
-            return fallback;
-        }
-
-        return value.toUpperCase();
-    }
-
-    private AppointmentResponse mapToResponse(Appointment appointment) {
-
-        return AppointmentResponse.builder()
-                .id(appointment.getId())
-                .clientId(appointment.getClient().getId())
-                .clientName(appointment.getClient().getFullName())
-                .caregiverId(appointment.getCaregiver().getId())
-                .caregiverName(appointment.getCaregiver().getFullName())
-                .startTime(appointment.getStartTime())
-                .endTime(appointment.getEndTime())
-                .serviceType(appointment.getServiceType())
-                .shiftType(appointment.getShiftType())
-                .status(appointment.getStatus())
-                .evvRequired(appointment.getEvvRequired())
-                .billable(appointment.getBillable())
-                .notes(appointment.getNotes())
-                .completed(appointment.getCompleted())
-                .repeatType(appointment.getRepeatType())
-                .recurringGroupCreatedAt(appointment.getRecurringGroupCreatedAt())
-                .build();
-    }
-    public AppointmentResponse updateAppointmentStatus(
-            Long appointmentId,
-            AppointmentStatusUpdateRequest request
-    ) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
-
-        String status = request.getStatus() != null
-                ? request.getStatus().toUpperCase()
-                : appointment.getStatus();
-
-        appointment.setStatus(status);
-
-        if ("COMPLETED".equals(status)) {
-            appointment.setCompleted(true);
-        } else {
-            appointment.setCompleted(false);
-        }
-
-        if (request.getNotes() != null && !request.getNotes().isBlank()) {
-            appointment.setNotes(request.getNotes());
-        }
-
-        return mapToResponse(appointmentRepository.save(appointment));
-    }
     private void validateNoScheduleConflict(AppointmentRequest request) {
         boolean caregiverConflict = appointmentRepository
                 .findByCaregiverIdAndStartTimeLessThanAndEndTimeGreaterThan(
@@ -173,9 +194,7 @@ public class AppointmentService {
                         request.getStartTime()
                 )
                 .stream()
-                .anyMatch(appointment ->
-                        !"CANCELLED".equalsIgnoreCase(appointment.getStatus())
-                );
+                .anyMatch(appointment -> !"CANCELLED".equalsIgnoreCase(appointment.getStatus()));
 
         if (caregiverConflict) {
             throw new RuntimeException("Caregiver already has an appointment during this time.");
@@ -188,14 +207,13 @@ public class AppointmentService {
                         request.getStartTime()
                 )
                 .stream()
-                .anyMatch(appointment ->
-                        !"CANCELLED".equalsIgnoreCase(appointment.getStatus())
-                );
+                .anyMatch(appointment -> !"CANCELLED".equalsIgnoreCase(appointment.getStatus()));
 
         if (clientConflict) {
             throw new RuntimeException("Client already has an appointment during this time.");
         }
     }
+
     private Appointment buildAppointment(
             AppointmentRequest request,
             Client client,
@@ -279,6 +297,7 @@ public class AppointmentService {
 
         copy.setClientId(original.getClientId());
         copy.setCaregiverId(original.getCaregiverId());
+        copy.setCreatedByUserId(original.getCreatedByUserId());
         copy.setStartTime(start);
         copy.setEndTime(end);
         copy.setServiceType(original.getServiceType());
@@ -293,10 +312,32 @@ public class AppointmentService {
         return copy;
     }
 
-    public AppointmentResponse getAppointmentById(Long id) {
-        Appointment appointment = appointmentRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Appointment not found."));
+    private String defaultValue(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
 
-        return mapToResponse(appointment);
+        return value.toUpperCase();
+    }
+
+    private AppointmentResponse mapToResponse(Appointment appointment) {
+        return AppointmentResponse.builder()
+                .id(appointment.getId())
+                .clientId(appointment.getClient().getId())
+                .clientName(appointment.getClient().getFullName())
+                .caregiverId(appointment.getCaregiver().getId())
+                .caregiverName(appointment.getCaregiver().getFullName())
+                .startTime(appointment.getStartTime())
+                .endTime(appointment.getEndTime())
+                .serviceType(appointment.getServiceType())
+                .shiftType(appointment.getShiftType())
+                .status(appointment.getStatus())
+                .evvRequired(appointment.getEvvRequired())
+                .billable(appointment.getBillable())
+                .notes(appointment.getNotes())
+                .completed(appointment.getCompleted())
+                .repeatType(appointment.getRepeatType())
+                .recurringGroupCreatedAt(appointment.getRecurringGroupCreatedAt())
+                .build();
     }
 }

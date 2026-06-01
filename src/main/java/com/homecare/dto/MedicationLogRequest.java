@@ -35,4 +35,6 @@ public class MedicationLogRequest {
     private String caregiverSignature;
 
     private String scheduledAt;
+
+    private Long actorUserId;
 }

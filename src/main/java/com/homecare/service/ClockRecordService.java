@@ -6,12 +6,12 @@ import com.homecare.dto.ClockRecordResponse;
 import com.homecare.entity.Appointment;
 import com.homecare.entity.ClockRecord;
 import com.homecare.entity.EVVException;
+import com.homecare.entity.User;
 import com.homecare.repository.AppointmentRepository;
 import com.homecare.repository.ClockRecordRepository;
-import com.homecare.repository.EVVAlertRepository;
 import com.homecare.repository.EVVExceptionRepository;
+import com.homecare.repository.UserRepository;
 import org.springframework.stereotype.Service;
-import com.homecare.service.EVVAlertService;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -24,23 +24,31 @@ public class ClockRecordService {
     private final AppointmentRepository appointmentRepository;
     private final EVVExceptionRepository evvExceptionRepository;
     private final EVVAlertService evvAlertService;
+    private final UserRepository userRepository;
+    private final AuditLogService auditLogService;
 
     public ClockRecordService(
             ClockRecordRepository clockRecordRepository,
             AppointmentRepository appointmentRepository,
             EVVExceptionRepository evvExceptionRepository,
-            EVVAlertService evvAlertService
+            EVVAlertService evvAlertService,
+            UserRepository userRepository,
+            AuditLogService auditLogService
     ) {
         this.clockRecordRepository = clockRecordRepository;
         this.appointmentRepository = appointmentRepository;
         this.evvExceptionRepository = evvExceptionRepository;
         this.evvAlertService = evvAlertService;
+        this.userRepository = userRepository;
+        this.auditLogService = auditLogService;
     }
 
     public ClockRecordResponse clockIn(ClockInRequest request) {
-
         Appointment appointment = appointmentRepository.findById(request.getAppointmentId())
                 .orElseThrow(() -> new RuntimeException("Appointment not found"));
+
+        User actor = userRepository.findById(request.getActorUserId())
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
 
         if (clockRecordRepository.existsByAppointmentId(request.getAppointmentId())) {
             throw new RuntimeException("Already clocked in for this appointment");
@@ -57,6 +65,17 @@ public class ClockRecordService {
 
         ClockRecord savedClockRecord = clockRecordRepository.save(clockRecord);
 
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                appointment.getClient().getId(),
+                "CLOCK_IN",
+                "CLOCK_RECORD",
+                savedClockRecord.getId(),
+                "Caregiver clocked in."
+        );
+
         createClockInExceptionsIfNeeded(appointment, savedClockRecord, request);
 
         appointment.setStatus("IN_PROGRESS");
@@ -67,9 +86,11 @@ public class ClockRecordService {
     }
 
     public ClockRecordResponse clockOut(ClockOutRequest request) {
-
         ClockRecord clockRecord = clockRecordRepository.findByAppointmentId(request.getAppointmentId())
                 .orElseThrow(() -> new RuntimeException("Clock-in record not found"));
+
+        User actor = userRepository.findById(request.getActorUserId())
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
 
         if (clockRecord.getClockOutTime() != null) {
             throw new RuntimeException("Already clocked out for this appointment");
@@ -81,12 +102,26 @@ public class ClockRecordService {
         clockRecord.setClockOutNotes(request.getNotes());
         clockRecord.setStatus("CLOCKED_OUT");
 
-        long minutes = Duration.between(clockRecord.getClockInTime(), clockRecord.getClockOutTime()).toMinutes();
+        long minutes = Duration.between(
+                clockRecord.getClockInTime(),
+                clockRecord.getClockOutTime()
+        ).toMinutes();
+
         clockRecord.setTotalHours(minutes / 60.0);
 
         ClockRecord savedClockRecord = clockRecordRepository.save(clockRecord);
-
         Appointment appointment = savedClockRecord.getAppointment();
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                appointment.getClient().getId(),
+                "CLOCK_OUT",
+                "CLOCK_RECORD",
+                savedClockRecord.getId(),
+                "Caregiver clocked out."
+        );
 
         createClockOutExceptionsIfNeeded(appointment, savedClockRecord, request);
 
@@ -158,7 +193,6 @@ public class ClockRecordService {
                     "HIGH",
                     "Caregiver clocked out without GPS coordinates."
             );
-
         }
 
         if (appointment.getEndTime() != null &&
@@ -170,20 +204,21 @@ public class ClockRecordService {
                     "MEDIUM",
                     "Caregiver clocked out more than 15 minutes before scheduled end time."
             );
-            long minutesWorked = Duration.between(
-                    clockRecord.getClockInTime(),
-                    clockRecord.getClockOutTime()
-            ).toMinutes();
+        }
 
-            if (minutesWorked < 15) {
-                createException(
-                        appointment,
-                        clockRecord,
-                        "SHORT_VISIT",
-                        "HIGH",
-                        "Visit duration was less than 15 minutes."
-                );
-            }
+        long minutesWorked = Duration.between(
+                clockRecord.getClockInTime(),
+                clockRecord.getClockOutTime()
+        ).toMinutes();
+
+        if (minutesWorked < 15) {
+            createException(
+                    appointment,
+                    clockRecord,
+                    "SHORT_VISIT",
+                    "HIGH",
+                    "Visit duration was less than 15 minutes."
+            );
         }
     }
 
@@ -219,6 +254,17 @@ public class ClockRecordService {
 
         EVVException savedException = evvExceptionRepository.save(exception);
 
+        auditLogService.logAction(
+                appointment.getCaregiver().getId(),
+                appointment.getCaregiver().getFullName(),
+                appointment.getCaregiver().getRole().name(),
+                appointment.getClient().getId(),
+                "EVV_EXCEPTION_CREATED",
+                "EVV_EXCEPTION",
+                savedException.getId(),
+                exceptionType + " exception created."
+        );
+
         evvAlertService.createAlertFromException(savedException);
     }
 
@@ -228,9 +274,17 @@ public class ClockRecordService {
 
         return ClockRecordResponse.builder()
                 .id(clockRecord.getId())
-                .appointmentId(appointment.getId())
-                .clientName(appointment.getClient().getFullName())
-                .caregiverName(appointment.getCaregiver().getFullName())
+                .appointmentId(appointment != null ? appointment.getId() : null)
+                .clientName(
+                        appointment != null && appointment.getClient() != null
+                                ? appointment.getClient().getFullName()
+                                : null
+                )
+                .caregiverName(
+                        appointment != null && appointment.getCaregiver() != null
+                                ? appointment.getCaregiver().getFullName()
+                                : null
+                )
                 .clockInTime(clockRecord.getClockInTime())
                 .clockOutTime(clockRecord.getClockOutTime())
                 .clockInLatitude(clockRecord.getClockInLatitude())
@@ -242,5 +296,4 @@ public class ClockRecordService {
                 .clockInNotes(clockRecord.getClockInNotes())
                 .clockOutNotes(clockRecord.getClockOutNotes())
                 .build();
-    }
-}
+    }}

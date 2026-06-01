@@ -28,6 +28,14 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
     List<Appointment> findByClientIdAndCompletedTrue(Long clientId);
 
+
+
+
+    // AppointmentRepository
+    long countByStatus(String status);
+
+
+
     List<Appointment> findByCaregiverIdAndStartTimeLessThanAndEndTimeGreaterThan(
             Long caregiverId,
             LocalDateTime endTime,
