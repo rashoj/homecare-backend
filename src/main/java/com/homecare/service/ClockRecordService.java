@@ -7,11 +7,9 @@ import com.homecare.entity.Appointment;
 import com.homecare.entity.ClockRecord;
 import com.homecare.entity.EVVException;
 import com.homecare.entity.User;
-import com.homecare.repository.AppointmentRepository;
-import com.homecare.repository.ClockRecordRepository;
-import com.homecare.repository.EVVExceptionRepository;
-import com.homecare.repository.UserRepository;
+import com.homecare.repository.*;
 import org.springframework.stereotype.Service;
+import com.homecare.dto.ClockRecordAdjustmentRequest;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -26,6 +24,8 @@ public class ClockRecordService {
     private final EVVAlertService evvAlertService;
     private final UserRepository userRepository;
     private final AuditLogService auditLogService;
+    private final TimesheetRepository timesheetRepository;
+    private final TimesheetService timesheetService;
 
     public ClockRecordService(
             ClockRecordRepository clockRecordRepository,
@@ -33,7 +33,9 @@ public class ClockRecordService {
             EVVExceptionRepository evvExceptionRepository,
             EVVAlertService evvAlertService,
             UserRepository userRepository,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            TimesheetRepository timesheetRepository,
+            TimesheetService timesheetService
     ) {
         this.clockRecordRepository = clockRecordRepository;
         this.appointmentRepository = appointmentRepository;
@@ -41,6 +43,8 @@ public class ClockRecordService {
         this.evvAlertService = evvAlertService;
         this.userRepository = userRepository;
         this.auditLogService = auditLogService;
+        this.timesheetRepository = timesheetRepository;
+        this.timesheetService = timesheetService;
     }
 
     public ClockRecordResponse clockIn(ClockInRequest request) {
@@ -129,9 +133,23 @@ public class ClockRecordService {
         appointment.setCompleted(true);
         appointmentRepository.save(appointment);
 
+        try {
+            timesheetService.generateFromClockRecord(savedClockRecord.getId());
+        } catch (Exception e) {
+            auditLogService.logAction(
+                    actor.getId(),
+                    actor.getFullName(),
+                    actor.getRole().name(),
+                    appointment.getClient().getId(),
+                    "TIMESHEET_AUTO_GENERATION_FAILED",
+                    "CLOCK_RECORD",
+                    savedClockRecord.getId(),
+                    e.getMessage()
+            );
+        }
+
         return mapToResponse(savedClockRecord);
     }
-
     public List<ClockRecordResponse> getAllClockRecords() {
         return clockRecordRepository.findAll()
                 .stream()
@@ -296,4 +314,93 @@ public class ClockRecordService {
                 .clockInNotes(clockRecord.getClockInNotes())
                 .clockOutNotes(clockRecord.getClockOutNotes())
                 .build();
-    }}
+    }
+    public ClockRecordResponse adminAdjustClockRecord(
+            Long id,
+            ClockRecordAdjustmentRequest request
+    ) {
+        if (request.getActorUserId() == null) {
+            throw new RuntimeException("Actor user is required for audit logging.");
+        }
+
+        if (request.getAdjustmentReason() == null ||
+                request.getAdjustmentReason().isBlank()) {
+            throw new RuntimeException("Adjustment reason is required.");
+        }
+
+        if (request.getClockInTime() == null || request.getClockOutTime() == null) {
+            throw new RuntimeException("Clock in and clock out times are required.");
+        }
+
+        if (!request.getClockOutTime().isAfter(request.getClockInTime())) {
+            throw new RuntimeException("Clock out time must be after clock in time.");
+        }
+
+        User actor = userRepository.findById(request.getActorUserId())
+                .orElseThrow(() -> new RuntimeException("Actor user not found."));
+
+        ClockRecord clockRecord = clockRecordRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Clock record not found."));
+
+        clockRecord.setClockInTime(request.getClockInTime());
+        clockRecord.setClockOutTime(request.getClockOutTime());
+        clockRecord.setStatus("CLOCKED_OUT");
+
+        ClockRecord savedClockRecord = clockRecordRepository.save(clockRecord);
+
+        timesheetRepository.findByClockRecordId(savedClockRecord.getId())
+                .ifPresent(timesheet -> {
+                    double totalHours = calculateHours(
+                            savedClockRecord.getClockInTime(),
+                            savedClockRecord.getClockOutTime()
+                    );
+
+                    timesheet.setClockInTime(savedClockRecord.getClockInTime());
+                    timesheet.setClockOutTime(savedClockRecord.getClockOutTime());
+                    timesheet.setTotalHours(totalHours);
+                    timesheet.setRegularHours(Math.min(totalHours, 8.0));
+                    timesheet.setOvertimeHours(Math.max(totalHours - 8.0, 0.0));
+
+                    double payRate = timesheet.getCaregiverPayRate() != null
+                            ? timesheet.getCaregiverPayRate()
+                            : 0.0;
+
+                    double billingRate = timesheet.getBillingRate() != null
+                            ? timesheet.getBillingRate()
+                            : 0.0;
+
+                    timesheet.setCaregiverPayAmount(roundMoney(totalHours * payRate));
+                    timesheet.setBillableAmount(roundMoney(totalHours * billingRate));
+
+                    timesheetRepository.save(timesheet);
+                });
+
+        Appointment appointment = savedClockRecord.getAppointment();
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                appointment.getClient().getId(),
+                "ADMIN_ADJUST_CLOCK_RECORD",
+                "CLOCK_RECORD",
+                savedClockRecord.getId(),
+                request.getAdjustmentReason()
+        );
+
+        return mapToResponse(savedClockRecord);
+    }
+    private double calculateHours(LocalDateTime start, LocalDateTime end) {
+        long seconds = java.time.Duration.between(start, end).getSeconds();
+
+        if (seconds <= 0) {
+            throw new RuntimeException("Invalid clock times.");
+        }
+
+        return Math.round((seconds / 3600.0) * 100.0) / 100.0;
+    }
+
+    private double roundMoney(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+}

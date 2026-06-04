@@ -6,12 +6,12 @@ import lombok.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "client_family_access")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@Table(name = "client_family_access")
 public class ClientFamilyAccess {
 
     @Id
@@ -30,9 +30,14 @@ public class ClientFamilyAccess {
 
     private LocalDateTime createdAt;
 
+    private String relationship;
+
     @PrePersist
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
-        if (this.active == null) this.active = true;
+
+        if (this.active == null) {
+            this.active = true;
+        }
     }
 }

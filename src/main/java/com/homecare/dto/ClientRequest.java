@@ -11,10 +11,7 @@ import java.time.LocalDate;
 
 @Getter
 @Setter
-@NotNull
-@NotBlank
-@Size
-@FutureOrPresent
+
 
 public class ClientRequest {
 

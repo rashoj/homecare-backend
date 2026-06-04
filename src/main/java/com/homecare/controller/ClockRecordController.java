@@ -5,6 +5,7 @@ import com.homecare.dto.ClockOutRequest;
 import com.homecare.dto.ClockRecordResponse;
 import com.homecare.service.ClockRecordService;
 import org.springframework.web.bind.annotation.*;
+import com.homecare.dto.ClockRecordAdjustmentRequest;
 
 import java.util.List;
 
@@ -46,5 +47,12 @@ public class ClockRecordController {
 
 
 
+    }
+    @PutMapping("/{id}/admin-adjust")
+    public ClockRecordResponse adminAdjustClockRecord(
+            @PathVariable Long id,
+            @RequestBody ClockRecordAdjustmentRequest request
+    ) {
+        return clockRecordService.adminAdjustClockRecord(id, request);
     }
 }

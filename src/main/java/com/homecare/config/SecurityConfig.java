@@ -188,28 +188,52 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/appointment-referrals/caregiver/**")
                         .hasAnyRole("ADMIN", "CAREGIVER")
 
-                        .requestMatchers("/api/appointment-referrals/**")
-                        .hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.POST, "/api/appointment-referrals/*/convert")
-                        .hasRole("ADMIN")
+                                // Appointment referrals - caregiver/admin specific routes first
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-referrals/caregiver/**")
+                                .hasAnyRole("ADMIN", "CAREGIVER")
 
-                        .requestMatchers(HttpMethod.POST, "/api/appointment-reschedule-requests")
-                        .hasAnyRole("ADMIN", "CAREGIVER")
+                                .requestMatchers(HttpMethod.POST, "/api/appointment-referrals")
+                                .hasAnyRole("ADMIN", "CAREGIVER")
 
-                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/client/**")
-                        .hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-referrals")
+                                .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/caregiver/**")
-                        .hasAnyRole("ADMIN", "CAREGIVER")
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-referrals/status/**")
+                                .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/appointment/**")
-                        .hasAnyRole("ADMIN", "CAREGIVER")
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-referrals/client/**")
+                                .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.PUT, "/api/appointment-reschedule-requests/*/review")
-                        .hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.PUT, "/api/appointment-referrals/*/review")
+                                .hasRole("ADMIN")
 
-                        .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests")
-                        .hasRole("ADMIN")
+                                .requestMatchers(HttpMethod.POST, "/api/appointment-referrals/*/convert")
+                                .hasRole("ADMIN")
+
+                                .requestMatchers("/api/appointment-referrals/**")
+                                .hasRole("ADMIN")
+
+// Appointment reschedule requests - caregiver/admin specific routes first
+                                .requestMatchers(HttpMethod.POST, "/api/appointment-reschedule-requests")
+                                .hasAnyRole("ADMIN", "CAREGIVER")
+
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/caregiver/**")
+                                .hasAnyRole("ADMIN", "CAREGIVER")
+
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/appointment/**")
+                                .hasAnyRole("ADMIN", "CAREGIVER")
+
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests/client/**")
+                                .hasRole("ADMIN")
+
+                                .requestMatchers(HttpMethod.PUT, "/api/appointment-reschedule-requests/*/review")
+                                .hasRole("ADMIN")
+
+                                .requestMatchers(HttpMethod.GET, "/api/appointment-reschedule-requests")
+                                .hasRole("ADMIN")
+
+                                .requestMatchers("/api/appointment-reschedule-requests/**")
+                                .hasRole("ADMIN")
 
                         .requestMatchers(HttpMethod.POST, "/api/audit-logs")
                         .hasAnyRole("ADMIN", "CAREGIVER")
@@ -220,11 +244,11 @@ public class SecurityConfig {
                         .requestMatchers("/api/family-portal/**")
                         .hasRole("FAMILY_MEMBER")
 
-                        .requestMatchers("/api/family-portal/**")
-                        .hasRole("FAMILY_MEMBER")
-
                         .requestMatchers(HttpMethod.GET, "/api/documents/*/download")
                         .hasAnyRole("ADMIN", "CAREGIVER", "FAMILY_MEMBER")
+
+                        .requestMatchers("/api/client-family-access/**")
+                        .hasRole("ADMIN")
 
 
 

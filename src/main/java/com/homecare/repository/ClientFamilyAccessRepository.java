@@ -8,4 +8,9 @@ import java.util.Optional;
 public interface ClientFamilyAccessRepository extends JpaRepository<ClientFamilyAccess, Long> {
 
     Optional<ClientFamilyAccess> findByFamilyUserIdAndActiveTrue(Long familyUserId);
+
+    boolean existsByClientIdAndFamilyUserIdAndActiveTrue(
+            Long clientId,
+            Long familyUserId
+    );
 }
