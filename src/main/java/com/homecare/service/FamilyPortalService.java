@@ -3,6 +3,7 @@ package com.homecare.service;
 import com.homecare.dto.*;
 import com.homecare.entity.ClientFamilyAccess;
 import com.homecare.entity.Notification;
+import com.homecare.entity.Role;
 import com.homecare.entity.User;
 import com.homecare.repository.*;
 import org.springframework.stereotype.Service;
@@ -408,7 +409,6 @@ public class FamilyPortalService {
             String email,
             CreateConversationRequest request
     ) {
-
         User familyUser = userRepository.findByEmail(email)
                 .orElseThrow(() -> new RuntimeException("Family user not found"));
 
@@ -422,9 +422,19 @@ public class FamilyPortalService {
         if (request.getType() == null || request.getType().isBlank()) {
             request.setType("FAMILY_AGENCY");
         }
+
         ConversationResponse conversation =
                 messagingService.createConversation(request);
-        messagingService.addParticipant(conversation.getId(), 2L);
+
+        List<User> admins = userRepository.findByRole(Role.ADMIN);
+
+        if (admins.isEmpty()) {
+            throw new RuntimeException("No admin user found.");
+        }
+
+        admins.forEach(admin ->
+                messagingService.addParticipant(conversation.getId(), admin.getId())
+        );
 
         return conversation;
     }
