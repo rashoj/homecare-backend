@@ -4,6 +4,7 @@ import com.homecare.dto.ClientRequest;
 import com.homecare.dto.ClientResponse;
 import com.homecare.service.ClientService;
 import jakarta.validation.Valid;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -20,30 +21,41 @@ public class ClientController {
     }
 
     @PostMapping
-    public ClientResponse createClient(@Valid @RequestBody ClientRequest request) {
-        return clientService.createClient(request);
+    public ClientResponse createClient(
+            @Valid @RequestBody ClientRequest request,
+            Authentication authentication
+    ) {
+        return clientService.createClient(request, authentication.getName());
     }
 
     @GetMapping
-    public List<ClientResponse> getAllClients() {
-        return clientService.getAllClients();
+    public List<ClientResponse> getAllClients(Authentication authentication) {
+        return clientService.getAllClients(authentication.getName());
     }
 
     @GetMapping("/{id}")
-    public ClientResponse getClientById(@PathVariable Long id) {
-        return clientService.getClientById(id);
+    public ClientResponse getClientById(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        return clientService.getClientById(id, authentication.getName());
     }
 
     @PutMapping("/{id}")
-    public ClientResponse updateClient(@PathVariable Long id,
-                                       @RequestBody ClientRequest request) {
-        return clientService.updateClient(id, request);
+    public ClientResponse updateClient(
+            @PathVariable Long id,
+            @RequestBody ClientRequest request,
+            Authentication authentication
+    ) {
+        return clientService.updateClient(id, request, authentication.getName());
     }
 
     @DeleteMapping("/{id}")
-    public String deleteClient(@PathVariable Long id) {
-        clientService.deleteClient(id);
+    public String deleteClient(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        clientService.deleteClient(id, authentication.getName());
         return "Client deleted successfully";
     }
-
 }

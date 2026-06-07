@@ -7,6 +7,7 @@ import com.homecare.dto.EVVExceptionSummaryResponse;
 import com.homecare.entity.EVVExceptionAuditLog;
 import com.homecare.service.EVVExceptionService;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -23,18 +24,18 @@ public class EVVExceptionController {
     }
 
     @GetMapping
-    public List<EVVExceptionResponse> getAllExceptions() {
-        return evvExceptionService.getAllExceptions();
+    public List<EVVExceptionResponse> getAllExceptions(Authentication authentication) {
+        return evvExceptionService.getAllExceptions(authentication.getName());
     }
 
     @GetMapping("/open")
-    public List<EVVExceptionResponse> getOpenExceptions() {
-        return evvExceptionService.getOpenExceptions();
+    public List<EVVExceptionResponse> getOpenExceptions(Authentication authentication) {
+        return evvExceptionService.getOpenExceptions(authentication.getName());
     }
 
     @GetMapping("/summary")
-    public ResponseEntity<EVVExceptionSummaryResponse> getSummary() {
-        return ResponseEntity.ok(evvExceptionService.getSummary());
+    public ResponseEntity<EVVExceptionSummaryResponse> getSummary(Authentication authentication) {
+        return ResponseEntity.ok(evvExceptionService.getSummary(authentication.getName()));
     }
 
     @GetMapping("/{id}/audit-logs")
@@ -45,16 +46,33 @@ public class EVVExceptionController {
     @PutMapping("/{id}/review")
     public EVVExceptionResponse reviewException(
             @PathVariable Long id,
-            @RequestBody EVVExceptionReviewRequest request
+            @RequestBody EVVExceptionReviewRequest request,
+            Authentication authentication
     ) {
-        return evvExceptionService.reviewException(id, request);
+        return evvExceptionService.reviewException(
+                id,
+                request,
+                authentication.getName()
+        );
     }
+
     @GetMapping("/client/{clientId}")
-    public List<EVVExceptionResponse> getExceptionsByClient(@PathVariable Long clientId) {
-        return evvExceptionService.getExceptionsByClient(clientId);
+    public List<EVVExceptionResponse> getExceptionsByClient(
+            @PathVariable Long clientId,
+            Authentication authentication
+    ) {
+        return evvExceptionService.getExceptionsByClient(
+                clientId,
+                authentication.getName()
+        );
     }
+
     @GetMapping("/compliance-dashboard")
-    public ResponseEntity<EVVComplianceDashboardResponse> getComplianceDashboard() {
-        return ResponseEntity.ok(evvExceptionService.getComplianceDashboard());
+    public ResponseEntity<EVVComplianceDashboardResponse> getComplianceDashboard(
+            Authentication authentication
+    ) {
+        return ResponseEntity.ok(
+                evvExceptionService.getComplianceDashboard(authentication.getName())
+        );
     }
 }

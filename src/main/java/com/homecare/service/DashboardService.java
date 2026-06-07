@@ -53,30 +53,41 @@ public class DashboardService {
         this.auditLogRepository = auditLogRepository;
     }
 
-    public AdminDashboardResponse getAdminDashboard() {
-        long totalMARLogs = medicationLogRepository.count();
+    public AdminDashboardResponse getAdminDashboard(String actorEmail) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+        Long organizationId = organization.getId();
 
-        long administered =
-                medicationLogRepository.countByStatus("GIVEN")
-                        + medicationLogRepository.countByStatus("ADMINISTERED");
+        List<User> organizationUsers =
+                userRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId);
 
-        double marComplianceRate =
-                totalMARLogs == 0 ? 0 : ((double) administered / totalMARLogs) * 100;
+        long totalAgencyUsers = organizationUsers.size();
+
+        long totalCaregivers = organizationUsers.stream()
+                .filter(user -> user.getRole() == Role.CAREGIVER)
+                .count();
+
+        long totalClients =
+                clientRepository.findByOrganizationIdAndActiveTrue(organizationId).size();
 
         return AdminDashboardResponse.builder()
-                .totalUsers(userRepository.count())
-                .totalCaregivers(userRepository.countByRole(Role.CAREGIVER))
-                .totalClients(clientRepository.count())
-                .totalAppointments(appointmentRepository.count())
-                .completedAppointments(appointmentRepository.countByCompletedTrue())
-                .pendingDocuments(documentRepository.countByApprovalStatus("PENDING"))
-                .totalMedications(medicationRepository.count())
-                .totalVisitNotes(visitNoteRepository.count())
-                .totalClockRecords(clockRecordRepository.count())
-                .missedAppointments(appointmentRepository.countByCompletedFalse())
-                .openIncidents(incidentRepository.countByStatus("UNDER_REVIEW"))
-                .pendingServiceDocumentation(serviceDocumentationRepository.countByStatus("SUBMITTED"))
-                .marComplianceRate(Math.round(marComplianceRate * 100.0) / 100.0)
+                .totalUsers(totalAgencyUsers)
+                .totalCaregivers(totalCaregivers)
+                .totalClients(totalClients)
+                .totalAppointments(appointmentRepository.countByOrganizationId(organizationId))
+                .completedAppointments(appointmentRepository.countByOrganizationIdAndCompletedTrue(organizationId))
+                .missedAppointments(appointmentRepository.countByOrganizationIdAndCompletedFalse(organizationId))
+                .pendingDocuments(0L)
+                .totalMedications(0L)
+                .totalVisitNotes(0L)
+                .totalClockRecords(0L)
+                .openIncidents(
+                        incidentRepository.countByOrganizationIdAndStatus(
+                                organizationId,
+                                "UNDER_REVIEW"
+                        )
+                )                .pendingServiceDocumentation(0L)
+                .marComplianceRate(0.0)
                 .build();
     }
 
@@ -96,16 +107,23 @@ public class DashboardService {
                 .build();
     }
 
-    public List<DashboardTrendResponse> getVisitTrends() {
+    public List<DashboardTrendResponse> getVisitTrends(String actorEmail) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+        Long organizationId = organization.getId();
+
+        List<Appointment> organizationAppointments =
+                appointmentRepository.findByOrganizationIdOrderByStartTimeDesc(organizationId);
+
         return last7Days().stream()
                 .map(day -> {
-                    long completed = appointmentRepository.findAll().stream()
+                    long completed = organizationAppointments.stream()
                             .filter(a -> a.getStartTime() != null)
                             .filter(a -> a.getStartTime().toLocalDate().equals(day))
                             .filter(a -> Boolean.TRUE.equals(a.getCompleted()))
                             .count();
 
-                    long missed = appointmentRepository.findAll().stream()
+                    long missed = organizationAppointments.stream()
                             .filter(a -> a.getStartTime() != null)
                             .filter(a -> a.getStartTime().toLocalDate().equals(day))
                             .filter(a -> Boolean.FALSE.equals(a.getCompleted()))
@@ -120,10 +138,18 @@ public class DashboardService {
                 .toList();
     }
 
-    public List<DashboardTrendResponse> getMarTrends() {
+    public List<DashboardTrendResponse> getMarTrends(String actorEmail) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+
+        Long organizationId = organization.getId();
+
+        List<MedicationLog> organizationLogs =
+                medicationLogRepository.findByOrganizationIdOrderByScheduledAtDesc(organizationId);
+
         return last7Days().stream()
                 .map(day -> {
-                    List<MedicationLog> logsForDay = medicationLogRepository.findAll().stream()
+                    List<MedicationLog> logsForDay = organizationLogs.stream()
                             .filter(log -> log.getScheduledAt() != null)
                             .filter(log -> log.getScheduledAt().toLocalDate().equals(day))
                             .toList();
@@ -133,7 +159,8 @@ public class DashboardService {
                     long given = logsForDay.stream()
                             .filter(log ->
                                     "GIVEN".equalsIgnoreCase(log.getStatus()) ||
-                                            "ADMINISTERED".equalsIgnoreCase(log.getStatus())
+                                            "ADMINISTERED".equalsIgnoreCase(log.getStatus()) ||
+                                            "PRN_GIVEN".equalsIgnoreCase(log.getStatus())
                             )
                             .count();
 
@@ -146,40 +173,43 @@ public class DashboardService {
                 })
                 .toList();
     }
+    public List<DashboardBreakdownResponse> getIncidentSeverity(String actorEmail) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
 
-    public List<DashboardBreakdownResponse> getIncidentSeverity() {
+        Long organizationId = organization.getId();
+
         return List.of(
                 DashboardBreakdownResponse.builder()
                         .name("LOW")
-                        .value(incidentRepository.findAll().stream()
-                                .filter(i -> "LOW".equalsIgnoreCase(i.getSeverity()))
-                                .count())
+                        .value(incidentRepository.countByOrganizationIdAndSeverity(organizationId, "LOW"))
                         .build(),
                 DashboardBreakdownResponse.builder()
                         .name("MEDIUM")
-                        .value(incidentRepository.findAll().stream()
-                                .filter(i -> "MEDIUM".equalsIgnoreCase(i.getSeverity()))
-                                .count())
+                        .value(incidentRepository.countByOrganizationIdAndSeverity(organizationId, "MEDIUM"))
                         .build(),
                 DashboardBreakdownResponse.builder()
                         .name("HIGH")
-                        .value(incidentRepository.findAll().stream()
-                                .filter(i -> "HIGH".equalsIgnoreCase(i.getSeverity()))
-                                .count())
+                        .value(incidentRepository.countByOrganizationIdAndSeverity(organizationId, "HIGH"))
                         .build(),
                 DashboardBreakdownResponse.builder()
                         .name("CRITICAL")
-                        .value(incidentRepository.findAll().stream()
-                                .filter(i -> "CRITICAL".equalsIgnoreCase(i.getSeverity()))
-                                .count())
+                        .value(incidentRepository.countByOrganizationIdAndSeverity(organizationId, "CRITICAL"))
                         .build()
         );
     }
+    public List<DashboardTrendResponse> getEVVTrends(String actorEmail) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
 
-    public List<DashboardTrendResponse> getEVVTrends() {
+        Long organizationId = organization.getId();
+
+        List<EVVException> organizationExceptions =
+                evvExceptionRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId);
+
         return last7Days().stream()
                 .map(day -> {
-                    long exceptions = evvExceptionRepository.findAll().stream()
+                    long exceptions = organizationExceptions.stream()
                             .filter(e -> e.getCreatedAt() != null)
                             .filter(e -> e.getCreatedAt().toLocalDate().equals(day))
                             .count();
@@ -191,10 +221,31 @@ public class DashboardService {
                 })
                 .toList();
     }
+    public List<RecentActivityResponse> getRecentActivity(String actorEmail) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+        Long organizationId = organization.getId();
 
-    public List<RecentActivityResponse> getRecentActivity() {
-        return auditLogRepository.findAll().stream()
-                .sorted(Comparator.comparing(AuditLog::getCreatedAt).reversed())
+        List<Long> organizationUserIds =
+                userRepository.findByOrganizationIdOrderByCreatedAtDesc(organizationId)
+                        .stream()
+                        .map(User::getId)
+                        .toList();
+
+        if (organizationUserIds.isEmpty()) {
+            return List.of();
+        }
+
+        return auditLogRepository.findByActorUserIdInOrderByCreatedAtDesc(organizationUserIds)
+                .stream()
+                .filter(log -> !List.of(
+                        "ORGANIZATION_CREATED",
+                        "AGENCY_ADMIN_CREATED",
+                        "DEMO_REQUEST_CREATED",
+                        "DEMO_REQUEST_STATUS_UPDATED",
+                        "CONTACT_REQUEST_CREATED",
+                        "CONTACT_REQUEST_STATUS_UPDATED"
+                ).contains(log.getAction()))
                 .limit(8)
                 .map(log -> RecentActivityResponse.builder()
                         .id(log.getId())
@@ -206,6 +257,28 @@ public class DashboardService {
                         .createdAt(log.getCreatedAt())
                         .build())
                 .toList();
+    }
+
+    private User getActor(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    private Organization requireOrganization(User user) {
+        if (user.getOrganization() == null ||
+                user.getOrganization().getId() == null) {
+
+            throw new RuntimeException(
+                    "User is not assigned to an organization. userId="
+                            + user.getId()
+                            + ", email="
+                            + user.getEmail()
+                            + ", role="
+                            + user.getRole()
+            );
+        }
+
+        return user.getOrganization();
     }
 
     private List<LocalDate> last7Days() {

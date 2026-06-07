@@ -34,6 +34,10 @@ public class EVVException {
     @JoinColumn(name = "caregiver_id", nullable = false)
     private User caregiver;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id")
+    private Organization organization;
+
     private String exceptionType;
     // LATE_CLOCK_IN, EARLY_CLOCK_OUT, MISSED_VISIT, GPS_MISSING, MANUAL_REVIEW
 

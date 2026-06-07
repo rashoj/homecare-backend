@@ -2,7 +2,9 @@ package com.homecare.controller;
 
 import com.homecare.entity.EVVAlert;
 import com.homecare.service.EVVAlertService;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
+import com.homecare.dto.EVVAlertResponse;
 
 import java.util.List;
 
@@ -18,17 +20,23 @@ public class EVVAlertController {
     }
 
     @GetMapping
-    public List<EVVAlert> getAllAlerts() {
-        return evvAlertService.getAllAlerts();
+    public List<EVVAlertResponse> getAllAlerts(Authentication authentication) {
+        return evvAlertService.getAllAlerts(authentication.getName());
     }
 
     @GetMapping("/unread")
-    public List<EVVAlert> getUnreadAlerts() {
-        return evvAlertService.getUnreadAlerts();
+    public List<EVVAlertResponse> getUnreadAlerts(Authentication authentication) {
+        return evvAlertService.getUnreadAlerts(authentication.getName());
     }
 
     @PutMapping("/{id}/read")
-    public EVVAlert markAsRead(@PathVariable Long id) {
-        return evvAlertService.markAsRead(id);
+    public EVVAlertResponse markAsRead(
+            @PathVariable Long id,
+            Authentication authentication
+    ) {
+        return evvAlertService.markAsRead(
+                id,
+                authentication.getName()
+        );
     }
 }

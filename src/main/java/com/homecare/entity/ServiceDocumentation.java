@@ -30,6 +30,10 @@ public class ServiceDocumentation {
     @JoinColumn(name = "caregiver_id", nullable = false)
     private User caregiver;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id")
+    private Organization organization;
+
     @Column(columnDefinition = "TEXT")
     private String shiftTasksCompleted;
 

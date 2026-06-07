@@ -6,8 +6,11 @@ import com.homecare.dto.EVVExceptionReviewRequest;
 import com.homecare.dto.EVVExceptionSummaryResponse;
 import com.homecare.entity.EVVException;
 import com.homecare.entity.EVVExceptionAuditLog;
+import com.homecare.entity.Organization;
+import com.homecare.entity.User;
 import com.homecare.repository.EVVExceptionAuditLogRepository;
 import com.homecare.repository.EVVExceptionRepository;
+import com.homecare.repository.UserRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -19,24 +22,36 @@ public class EVVExceptionService {
 
     private final EVVExceptionRepository evvExceptionRepository;
     private final EVVExceptionAuditLogRepository auditLogRepository;
+    private final UserRepository userRepository;
 
     public EVVExceptionService(
             EVVExceptionRepository evvExceptionRepository,
-            EVVExceptionAuditLogRepository auditLogRepository
+            EVVExceptionAuditLogRepository auditLogRepository,
+            UserRepository userRepository
     ) {
         this.evvExceptionRepository = evvExceptionRepository;
         this.auditLogRepository = auditLogRepository;
+        this.userRepository = userRepository;
     }
 
-    public List<EVVExceptionResponse> getAllExceptions() {
-        return evvExceptionRepository.findAll()
+    public List<EVVExceptionResponse> getAllExceptions(String actorEmail) {
+        Organization organization = getOrganization(actorEmail);
+
+        return evvExceptionRepository
+                .findByOrganizationIdOrderByCreatedAtDesc(organization.getId())
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    public List<EVVExceptionResponse> getOpenExceptions() {
-        return evvExceptionRepository.findByStatusOrderByCreatedAtDesc("OPEN")
+    public List<EVVExceptionResponse> getOpenExceptions(String actorEmail) {
+        Organization organization = getOrganization(actorEmail);
+
+        return evvExceptionRepository
+                .findByOrganizationIdAndStatusOrderByCreatedAtDesc(
+                        organization.getId(),
+                        "OPEN"
+                )
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -44,10 +59,14 @@ public class EVVExceptionService {
 
     public EVVExceptionResponse reviewException(
             Long id,
-            EVVExceptionReviewRequest request
+            EVVExceptionReviewRequest request,
+            String actorEmail
     ) {
-        EVVException exception = evvExceptionRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("EVV exception not found."));
+        Organization organization = getOrganization(actorEmail);
+
+        EVVException exception = evvExceptionRepository
+                .findByIdAndOrganizationId(id, organization.getId())
+                .orElseThrow(() -> new RuntimeException("EVV exception not found for this organization."));
 
         String oldStatus = exception.getStatus();
 
@@ -85,37 +104,17 @@ public class EVVExceptionService {
         return mapToResponse(savedException);
     }
 
-    private EVVExceptionResponse mapToResponse(EVVException exception) {
-        return EVVExceptionResponse.builder()
-                .id(exception.getId())
-                .appointmentId(exception.getAppointment().getId())
-                .clockRecordId(
-                        exception.getClockRecord() != null
-                                ? exception.getClockRecord().getId()
-                                : null
-                )
-                .clientId(exception.getClient().getId())
-                .clientName(exception.getClient().getFullName())
-                .caregiverId(exception.getCaregiver().getId())
-                .caregiverName(exception.getCaregiver().getFullName())
-                .exceptionType(exception.getExceptionType())
-                .severity(exception.getSeverity())
-                .status(exception.getStatus())
-                .description(exception.getDescription())
-                .supervisorNotes(exception.getSupervisorNotes())
-                .reviewedAt(exception.getReviewedAt())
-                .createdAt(exception.getCreatedAt())
-                .adminResolutionReason(exception.getAdminResolutionReason())
-                .correctedClockOutTime(exception.getCorrectedClockOutTime())
-                .adminApproved(exception.getAdminApproved())
-                .build();
-    }
     public List<EVVExceptionAuditLog> getAuditLogs(Long exceptionId) {
         return auditLogRepository.findByExceptionIdOrderByCreatedAtDesc(exceptionId);
     }
 
-    public EVVExceptionSummaryResponse getSummary() {
-        List<EVVException> exceptions = evvExceptionRepository.findAll();
+    public EVVExceptionSummaryResponse getSummary(String actorEmail) {
+        Organization organization = getOrganization(actorEmail);
+
+        List<EVVException> exceptions =
+                evvExceptionRepository.findByOrganizationIdOrderByCreatedAtDesc(
+                        organization.getId()
+                );
 
         long total = exceptions.size();
 
@@ -143,15 +142,30 @@ public class EVVExceptionService {
                 .highSeverity(highSeverity)
                 .build();
     }
-    public List<EVVExceptionResponse> getExceptionsByClient(Long clientId) {
-        return evvExceptionRepository.findByClientIdOrderByCreatedAtDesc(clientId)
+
+    public List<EVVExceptionResponse> getExceptionsByClient(
+            Long clientId,
+            String actorEmail
+    ) {
+        Organization organization = getOrganization(actorEmail);
+
+        return evvExceptionRepository
+                .findByOrganizationIdAndClientIdOrderByCreatedAtDesc(
+                        organization.getId(),
+                        clientId
+                )
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    public EVVComplianceDashboardResponse getComplianceDashboard() {
-        List<EVVException> exceptions = evvExceptionRepository.findAll();
+    public EVVComplianceDashboardResponse getComplianceDashboard(String actorEmail) {
+        Organization organization = getOrganization(actorEmail);
+
+        List<EVVException> exceptions =
+                evvExceptionRepository.findByOrganizationIdOrderByCreatedAtDesc(
+                        organization.getId()
+                );
 
         long total = exceptions.size();
 
@@ -203,6 +217,50 @@ public class EVVExceptionService {
                 .exceptionsByType(byType)
                 .exceptionsByClient(byClient)
                 .exceptionsByCaregiver(byCaregiver)
+                .build();
+    }
+
+    private Organization getOrganization(String actorEmail) {
+        User actor = userRepository.findByEmail(actorEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (actor.getOrganization() == null || actor.getOrganization().getId() == null) {
+            throw new RuntimeException(
+                    "User is not assigned to an organization. userId="
+                            + actor.getId()
+                            + ", email="
+                            + actor.getEmail()
+                            + ", role="
+                            + actor.getRole()
+            );
+        }
+
+        return actor.getOrganization();
+    }
+
+    private EVVExceptionResponse mapToResponse(EVVException exception) {
+        return EVVExceptionResponse.builder()
+                .id(exception.getId())
+                .appointmentId(exception.getAppointment().getId())
+                .clockRecordId(
+                        exception.getClockRecord() != null
+                                ? exception.getClockRecord().getId()
+                                : null
+                )
+                .clientId(exception.getClient().getId())
+                .clientName(exception.getClient().getFullName())
+                .caregiverId(exception.getCaregiver().getId())
+                .caregiverName(exception.getCaregiver().getFullName())
+                .exceptionType(exception.getExceptionType())
+                .severity(exception.getSeverity())
+                .status(exception.getStatus())
+                .description(exception.getDescription())
+                .supervisorNotes(exception.getSupervisorNotes())
+                .reviewedAt(exception.getReviewedAt())
+                .createdAt(exception.getCreatedAt())
+                .adminResolutionReason(exception.getAdminResolutionReason())
+                .correctedClockOutTime(exception.getCorrectedClockOutTime())
+                .adminApproved(exception.getAdminApproved())
                 .build();
     }
 }

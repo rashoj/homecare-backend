@@ -153,6 +153,7 @@ public class MedicationService {
                 .medication(medication)
                 .client(medication.getClient())
                 .caregiver(caregiver)
+                .organization(medication.getClient().getOrganization())
                 .scheduledAt(scheduledAt)
                 .status(request.getStatus())
                 .notes(request.getNotes())

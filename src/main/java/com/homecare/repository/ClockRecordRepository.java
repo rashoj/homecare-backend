@@ -21,6 +21,6 @@ public interface ClockRecordRepository extends JpaRepository<ClockRecord, Long> 
     long countByStatus(String status);
 
     long countByAppointmentClientIdAndStatus(Long clientId, String status);
-
+    long countByAppointmentOrganizationIdAndStatus(Long organizationId, String status);
 
 }

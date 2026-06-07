@@ -4,6 +4,7 @@ import com.homecare.entity.EVVException;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
+import java.util.Optional;
 
 public interface EVVExceptionRepository extends JpaRepository<EVVException, Long> {
 
@@ -15,10 +16,27 @@ public interface EVVExceptionRepository extends JpaRepository<EVVException, Long
 
     List<EVVException> findByClientIdOrderByCreatedAtDesc(Long clientId);
 
+    List<EVVException> findByOrganizationIdOrderByCreatedAtDesc(Long organizationId);
+
+    List<EVVException> findByOrganizationIdAndStatusOrderByCreatedAtDesc(
+            Long organizationId,
+            String status
+    );
+
+    List<EVVException> findByOrganizationIdAndClientIdOrderByCreatedAtDesc(
+            Long organizationId,
+            Long clientId
+    );
+
+    Optional<EVVException> findByIdAndOrganizationId(Long id, Long organizationId);
+
     long countByStatus(String status);
 
     long countBySeverity(String severity);
 
+    long countByOrganizationIdAndStatus(Long organizationId, String status);
+
+    long countByOrganizationIdAndSeverity(Long organizationId, String severity);
 
     boolean existsByAppointmentIdAndClockRecordIdAndExceptionType(
             Long appointmentId,

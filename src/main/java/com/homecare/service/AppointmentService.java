@@ -5,6 +5,7 @@ import com.homecare.dto.AppointmentResponse;
 import com.homecare.dto.AppointmentStatusUpdateRequest;
 import com.homecare.entity.Appointment;
 import com.homecare.entity.Client;
+import com.homecare.entity.Organization;
 import com.homecare.entity.User;
 import com.homecare.repository.AppointmentRepository;
 import com.homecare.repository.ClientCaregiverRepository;
@@ -38,15 +39,24 @@ public class AppointmentService {
         this.auditLogService = auditLogService;
     }
 
-    public AppointmentResponse createAppointment(AppointmentRequest request) {
-        Client client = clientRepository.findById(request.getClientId())
-                .orElseThrow(() -> new RuntimeException("Client not found"));
+    public AppointmentResponse createAppointment(
+            AppointmentRequest request,
+            String actorEmail
+    ) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+
+        Client client = clientRepository
+                .findByIdAndOrganizationId(request.getClientId(), organization.getId())
+                .orElseThrow(() -> new RuntimeException("Client not found for this organization"));
 
         User caregiver = userRepository.findById(request.getCaregiverId())
                 .orElseThrow(() -> new RuntimeException("Caregiver not found"));
 
-        User actor = userRepository.findById(request.getCreatedByUserId())
-                .orElseThrow(() -> new RuntimeException("Creating user not found."));
+        if (caregiver.getOrganization() == null ||
+                !caregiver.getOrganization().getId().equals(organization.getId())) {
+            throw new RuntimeException("Caregiver does not belong to this organization");
+        }
 
         boolean assigned = clientCaregiverRepository
                 .existsByClientIdAndCaregiverIdAndActiveTrue(client.getId(), caregiver.getId());
@@ -63,7 +73,7 @@ public class AppointmentService {
             validateNoScheduleConflict(request);
 
             Appointment savedAppointment = appointmentRepository.save(
-                    buildAppointment(request, client, caregiver, repeatType)
+                    buildAppointment(request, client, caregiver, organization, repeatType)
             );
 
             auditLogService.logAction(
@@ -84,6 +94,7 @@ public class AppointmentService {
                 request,
                 client,
                 caregiver,
+                organization,
                 repeatType
         );
 
@@ -103,13 +114,15 @@ public class AppointmentService {
 
     public AppointmentResponse updateAppointmentStatus(
             Long appointmentId,
-            AppointmentStatusUpdateRequest request
+            AppointmentStatusUpdateRequest request,
+            String actorEmail
     ) {
-        Appointment appointment = appointmentRepository.findById(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Appointment not found"));
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
 
-        User actor = userRepository.findById(request.getUpdatedByUserId())
-                .orElseThrow(() -> new RuntimeException("Updating user not found."));
+        Appointment appointment = appointmentRepository
+                .findByIdAndOrganizationId(appointmentId, organization.getId())
+                .orElseThrow(() -> new RuntimeException("Appointment not found for this organization"));
 
         String previousStatus = appointment.getStatus();
 
@@ -148,29 +161,54 @@ public class AppointmentService {
         return mapToResponse(savedAppointment);
     }
 
-    public AppointmentResponse getAppointmentById(Long id) {
-        Appointment appointment = appointmentRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Appointment not found."));
+    public AppointmentResponse getAppointmentById(
+            Long id,
+            String actorEmail
+    ) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+
+        Appointment appointment = appointmentRepository
+                .findByIdAndOrganizationId(id, organization.getId())
+                .orElseThrow(() -> new RuntimeException("Appointment not found for this organization"));
 
         return mapToResponse(appointment);
     }
 
-    public List<AppointmentResponse> getAllAppointments() {
-        return appointmentRepository.findAll()
+    public List<AppointmentResponse> getAllAppointments(String actorEmail) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+
+        return appointmentRepository
+                .findByOrganizationIdOrderByStartTimeDesc(organization.getId())
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    public List<AppointmentResponse> getAppointmentsByClient(Long clientId) {
-        return appointmentRepository.findByClientId(clientId)
+    public List<AppointmentResponse> getAppointmentsByClient(
+            Long clientId,
+            String actorEmail
+    ) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+
+        return appointmentRepository
+                .findByClientIdAndOrganizationId(clientId, organization.getId())
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    public List<AppointmentResponse> getAppointmentsByCaregiver(Long caregiverId) {
-        return appointmentRepository.findByCaregiverId(caregiverId)
+    public List<AppointmentResponse> getAppointmentsByCaregiver(
+            Long caregiverId,
+            String actorEmail
+    ) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+
+        return appointmentRepository
+                .findByCaregiverIdAndOrganizationId(caregiverId, organization.getId())
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
@@ -218,11 +256,13 @@ public class AppointmentService {
             AppointmentRequest request,
             Client client,
             User caregiver,
+            Organization organization,
             String repeatType
     ) {
         return Appointment.builder()
                 .client(client)
                 .caregiver(caregiver)
+                .organization(organization)
                 .startTime(request.getStartTime())
                 .endTime(request.getEndTime())
                 .serviceType(defaultValue(request.getServiceType(), "PERSONAL_CARE"))
@@ -241,6 +281,7 @@ public class AppointmentService {
             AppointmentRequest request,
             Client client,
             User caregiver,
+            Organization organization,
             String repeatType
     ) {
         if (request.getRepeatUntil() == null) {
@@ -270,6 +311,7 @@ public class AppointmentService {
                     occurrenceRequest,
                     client,
                     caregiver,
+                    organization,
                     repeatType
             );
 
@@ -310,6 +352,26 @@ public class AppointmentService {
         copy.setNotes(original.getNotes());
 
         return copy;
+    }
+
+    private User getActor(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+    }
+
+    private Organization requireOrganization(User user) {
+        if (user.getOrganization() == null || user.getOrganization().getId() == null) {
+            throw new RuntimeException(
+                    "User is not assigned to an organization. userId="
+                            + user.getId()
+                            + ", email="
+                            + user.getEmail()
+                            + ", role="
+                            + user.getRole()
+            );
+        }
+
+        return user.getOrganization();
     }
 
     private String defaultValue(String value, String fallback) {

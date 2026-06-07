@@ -7,6 +7,7 @@ import com.homecare.entity.*;
 import com.homecare.repository.*;
 import org.springframework.stereotype.Service;
 
+
 import java.util.List;
 
 @Service
@@ -35,14 +36,13 @@ public class IncidentService {
         this.auditLogService = auditLogService;
     }
 
-    public IncidentResponse createIncident(IncidentRequest request) {
+    public IncidentResponse createIncident(IncidentRequest request, String actorEmail) {
         Client client = clientRepository.findById(request.getClientId())
                 .orElseThrow(() -> new RuntimeException("Client not found"));
 
         User caregiver = userRepository.findById(request.getCaregiverId())
                 .orElseThrow(() -> new RuntimeException("Caregiver not found"));
-
-        User actor = userRepository.findById(request.getActorUserId())
+        User actor = userRepository.findByEmail(actorEmail)
                 .orElseThrow(() -> new RuntimeException("Actor user not found."));
 
         Appointment appointment = null;
@@ -56,7 +56,7 @@ public class IncidentService {
                 .appointment(appointment)
                 .client(client)
                 .caregiver(caregiver)
-                .incidentDateTime(request.getIncidentDateTime())
+                .organization(actor.getOrganization())
                 .incidentType(request.getIncidentType())
                 .severity(normalizeSeverity(request.getSeverity()))
                 .description(request.getDescription())

@@ -28,7 +28,20 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
 
     List<Appointment> findByClientIdAndCompletedTrue(Long clientId);
 
+    long countByOrganizationId(Long organizationId);
 
+    long countByOrganizationIdAndCompletedTrue(Long organizationId);
+
+    long countByOrganizationIdAndCompletedFalse(Long organizationId);
+
+
+    List<Appointment> findByOrganizationIdOrderByStartTimeDesc(Long organizationId);
+
+    List<Appointment> findByClientIdAndOrganizationId(Long clientId, Long organizationId);
+
+    List<Appointment> findByCaregiverIdAndOrganizationId(Long caregiverId, Long organizationId);
+
+    java.util.Optional<Appointment> findByIdAndOrganizationId(Long id, Long organizationId);
 
 
     // AppointmentRepository

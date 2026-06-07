@@ -4,6 +4,7 @@ import com.homecare.dto.*;
 import com.homecare.entity.*;
 import com.homecare.repository.*;
 import org.springframework.stereotype.Service;
+import com.homecare.repository.UserRepository;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -19,6 +20,7 @@ public class ServiceDocumentationService {
     private final ISPGoalRepository ispGoalRepository;
     private final ISPGoalProgressLogRepository ispGoalProgressLogRepository;
     private final BehaviorEventRepository behaviorEventRepository;
+    private final UserRepository userRepository;
 
     public ServiceDocumentationService(
             ServiceDocumentationRepository serviceDocumentationRepository,
@@ -28,7 +30,7 @@ public class ServiceDocumentationService {
             ServiceDocumentationAuditLogRepository auditLogRepository,
             ISPGoalRepository ispGoalRepository,
             ISPGoalProgressLogRepository ispGoalProgressLogRepository,
-            BehaviorEventRepository behaviorEventRepository
+            BehaviorEventRepository behaviorEventRepository,UserRepository userRepository
     ) {
         this.serviceDocumentationRepository = serviceDocumentationRepository;
         this.appointmentRepository = appointmentRepository;
@@ -38,9 +40,10 @@ public class ServiceDocumentationService {
         this.ispGoalRepository = ispGoalRepository;
         this.ispGoalProgressLogRepository = ispGoalProgressLogRepository;
         this.behaviorEventRepository = behaviorEventRepository;
+        this.userRepository = userRepository;
     }
 
-    public ServiceDocumentationResponse submitDocumentation(ServiceDocumentationRequest request) {
+    public ServiceDocumentationResponse submitDocumentation(ServiceDocumentationRequest request, String actorEmail) {
         if (serviceDocumentationRepository.existsByAppointmentId(request.getAppointmentId())) {
             throw new RuntimeException("Service documentation already exists for this appointment.");
         }
@@ -60,6 +63,7 @@ public class ServiceDocumentationService {
                 .appointment(appointment)
                 .client(appointment.getClient())
                 .caregiver(appointment.getCaregiver())
+                .organization(appointment.getOrganization())
                 .shiftTasksCompleted(request.getShiftTasksCompleted())
                 .adlsCompleted(request.getAdlsCompleted())
                 .goalProgressNotes(request.getGoalProgressNotes())
@@ -124,7 +128,8 @@ public class ServiceDocumentationService {
 
     public ServiceDocumentationResponse reviewDocumentation(
             Long id,
-            ServiceDocumentationReviewRequest request
+            ServiceDocumentationReviewRequest request,
+            String actorEmail
     ) {
         ServiceDocumentation documentation = serviceDocumentationRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Service documentation not found."));
@@ -224,23 +229,47 @@ public class ServiceDocumentationService {
         return mapToResponse(savedDocumentation);
     }
 
-    public List<ServiceDocumentationResponse> getDocumentationByClient(Long clientId) {
-        return serviceDocumentationRepository.findByClientIdOrderBySubmittedAtDesc(clientId)
+    public List<ServiceDocumentationResponse> getDocumentationByClient(
+            Long clientId,
+            String actorEmail
+    ){
+        Organization organization = getOrganization(actorEmail);
+
+        return serviceDocumentationRepository
+                .findByOrganizationIdAndClientIdOrderBySubmittedAtDesc(
+                        organization.getId(),
+                        clientId
+                )
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    public List<ServiceDocumentationResponse> getPendingDocumentation() {
-        return serviceDocumentationRepository.findByStatusOrderBySubmittedAtDesc("SUBMITTED")
+    public List<ServiceDocumentationResponse> getPendingDocumentation(String actorEmail) {
+        Organization organization = getOrganization(actorEmail);
+
+        return serviceDocumentationRepository
+                .findByOrganizationIdAndStatusOrderBySubmittedAtDesc(
+                        organization.getId(),
+                        "SUBMITTED"
+                )
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    public ServiceDocumentationResponse getDocumentationByAppointment(Long appointmentId) {
-        ServiceDocumentation documentation = serviceDocumentationRepository.findByAppointmentId(appointmentId)
-                .orElseThrow(() -> new RuntimeException("Service documentation not found."));
+    public ServiceDocumentationResponse getDocumentationByAppointment(Long appointmentId, String actorEmail) {
+        Organization organization = getOrganization(actorEmail);
+
+        ServiceDocumentation documentation =
+                serviceDocumentationRepository
+                        .findByAppointmentIdAndOrganizationId(
+                                appointmentId,
+                                organization.getId()
+                        )
+                        .orElseThrow(() ->
+                                new RuntimeException("Service documentation not found.")
+                        );
 
         return mapToResponse(documentation);
     }
@@ -273,5 +302,18 @@ public class ServiceDocumentationService {
                 .correctionReason(documentation.getCorrectionReason())
                 .timeCorrectionApproved(documentation.getTimeCorrectionApproved())
                 .build();
+    }
+    private Organization getOrganization(String actorEmail) {
+
+        User actor = userRepository.findByEmail(actorEmail)
+                .orElseThrow(() -> new RuntimeException("User not found"));
+
+        if (actor.getOrganization() == null) {
+            throw new RuntimeException(
+                    "User is not assigned to an organization"
+            );
+        }
+
+        return actor.getOrganization();
     }
 }

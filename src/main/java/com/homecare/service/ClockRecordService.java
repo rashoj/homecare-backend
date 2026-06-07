@@ -263,6 +263,7 @@ public class ClockRecordService {
                 .clockRecord(clockRecord)
                 .client(appointment.getClient())
                 .caregiver(appointment.getCaregiver())
+                .organization(appointment.getOrganization())
                 .exceptionType(exceptionType)
                 .severity(severity)
                 .status("OPEN")

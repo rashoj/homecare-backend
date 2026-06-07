@@ -11,6 +11,8 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByEmail(String email);
 
+    List<User> findByOrganizationIdOrderByCreatedAtDesc(Long organizationId);
+
     boolean existsByEmail(String email);
     long countByRole(com.homecare.entity.Role role);
 

@@ -4,41 +4,30 @@ import jakarta.persistence.*;
 import lombok.*;
 
 import java.time.LocalDateTime;
-import com.homecare.entity.Role;
-import com.homecare.entity.Organization;
 
 @Entity
-@Table(name = "users")
+@Table(name = "contact_requests")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class User {
+public class ContactRequest {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false)
     private String fullName;
 
-    @Column(nullable = false, unique = true)
     private String email;
 
-    @Column(nullable = false)
-    private String password;
+    private String subject;
 
-    @Enumerated(EnumType.STRING)
-    private Role role;
+    @Column(columnDefinition = "TEXT")
+    private String message;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "organization_id")
-    private Organization organization;
-
-    private String phoneNumber;
-
-    private Boolean active;
+    private String status;
 
     private LocalDateTime createdAt;
 
@@ -48,7 +37,10 @@ public class User {
     public void onCreate() {
         this.createdAt = LocalDateTime.now();
         this.updatedAt = LocalDateTime.now();
-        this.active = true;
+
+        if (this.status == null) {
+            this.status = "NEW";
+        }
     }
 
     @PreUpdate

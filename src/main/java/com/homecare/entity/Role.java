@@ -2,7 +2,16 @@ package com.homecare.entity;
 
 public enum Role {
 
-    ADMIN,
+    PLATFORM_OWNER,
+    PLATFORM_ADMIN,
+
+    AGENCY_ADMIN,
+    SCHEDULER,
+    SUPERVISOR,
+    FINANCE,
+
     CAREGIVER,
-    FAMILY_MEMBER
+    FAMILY_MEMBER,
+
+    ADMIN
 }

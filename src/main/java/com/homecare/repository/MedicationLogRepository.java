@@ -19,6 +19,14 @@ public interface MedicationLogRepository extends JpaRepository<MedicationLog, Lo
 
     List<MedicationLog> findByStatusOrderByCreatedAtDesc(String status);
 
+    List<MedicationLog> findByOrganizationIdOrderByScheduledAtDesc(Long organizationId);
+
+    List<MedicationLog> findByOrganizationIdAndClientId(Long organizationId, Long clientId);
+
+    List<MedicationLog> findByOrganizationIdAndMedicationId(Long organizationId, Long medicationId);
+
+    long countByOrganizationIdAndStatus(Long organizationId, String status);
+
 
     boolean existsByMedicationIdAndClientIdAndScheduledAt(
             Long medicationId,

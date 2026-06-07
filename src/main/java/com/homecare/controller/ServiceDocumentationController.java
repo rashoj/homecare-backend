@@ -8,6 +8,7 @@ import com.homecare.service.ServiceDocumentationPdfService;
 import com.homecare.service.ServiceDocumentationService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -30,36 +31,57 @@ public class ServiceDocumentationController {
 
     @PostMapping
     public ServiceDocumentationResponse submitDocumentation(
-            @RequestBody ServiceDocumentationRequest request
+            @RequestBody ServiceDocumentationRequest request,
+            Authentication authentication
     ) {
-        return serviceDocumentationService.submitDocumentation(request);
+        return serviceDocumentationService.submitDocumentation(
+                request,
+                authentication.getName()
+        );
     }
 
     @PutMapping("/{id}/review")
     public ServiceDocumentationResponse reviewDocumentation(
             @PathVariable Long id,
-            @RequestBody ServiceDocumentationReviewRequest request
+            @RequestBody ServiceDocumentationReviewRequest request,
+            Authentication authentication
     ) {
-        return serviceDocumentationService.reviewDocumentation(id, request);
+        return serviceDocumentationService.reviewDocumentation(
+                id,
+                request,
+                authentication.getName()
+        );
     }
 
     @GetMapping("/client/{clientId}")
     public List<ServiceDocumentationResponse> getDocumentationByClient(
-            @PathVariable Long clientId
+            @PathVariable Long clientId,
+            Authentication authentication
     ) {
-        return serviceDocumentationService.getDocumentationByClient(clientId);
+        return serviceDocumentationService.getDocumentationByClient(
+                clientId,
+                authentication.getName()
+        );
     }
 
     @GetMapping("/pending")
-    public List<ServiceDocumentationResponse> getPendingDocumentation() {
-        return serviceDocumentationService.getPendingDocumentation();
+    public List<ServiceDocumentationResponse> getPendingDocumentation(
+            Authentication authentication
+    ) {
+        return serviceDocumentationService.getPendingDocumentation(
+                authentication.getName()
+        );
     }
 
     @GetMapping("/appointment/{appointmentId}")
     public ServiceDocumentationResponse getDocumentationByAppointment(
-            @PathVariable Long appointmentId
+            @PathVariable Long appointmentId,
+            Authentication authentication
     ) {
-        return serviceDocumentationService.getDocumentationByAppointment(appointmentId);
+        return serviceDocumentationService.getDocumentationByAppointment(
+                appointmentId,
+                authentication.getName()
+        );
     }
 
     @GetMapping("/{id}/pdf")
@@ -74,6 +96,7 @@ public class ServiceDocumentationController {
                 .contentType(MediaType.APPLICATION_PDF)
                 .body(pdf);
     }
+
     @GetMapping("/{id}/audit-logs")
     public ResponseEntity<List<ServiceDocumentationAuditLog>> getAuditLogs(@PathVariable Long id) {
         return ResponseEntity.ok(serviceDocumentationService.getAuditLogs(id));

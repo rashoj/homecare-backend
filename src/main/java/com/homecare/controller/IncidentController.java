@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.*;
 import com.homecare.service.IncidentPdfService;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication;
 
 import java.util.List;
 
@@ -28,8 +29,11 @@ public class IncidentController {
 
 
     @PostMapping
-    public IncidentResponse createIncident(@RequestBody IncidentRequest request) {
-        return incidentService.createIncident(request);
+    public IncidentResponse createIncident(
+            @RequestBody IncidentRequest request,
+            Authentication authentication
+    ) {
+        return incidentService.createIncident(request, authentication.getName());
     }
 
     @GetMapping

@@ -12,4 +12,13 @@ public interface EVVAlertRepository extends JpaRepository<EVVAlert, Long> {
     List<EVVAlert> findAllByOrderByCreatedAtDesc();
 
     long countByStatus(String status);
+
+    List<EVVAlert> findByOrganizationIdAndStatusOrderByCreatedAtDesc(
+            Long organizationId,
+            String status
+    );
+
+    List<EVVAlert> findByOrganizationIdOrderByCreatedAtDesc(Long organizationId);
+
+    long countByOrganizationIdAndStatus(Long organizationId, String status);
 }

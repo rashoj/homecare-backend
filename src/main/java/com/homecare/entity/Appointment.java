@@ -26,6 +26,10 @@ public class Appointment {
     @JoinColumn(name = "caregiver_id")
     private User caregiver;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "organization_id")
+    private Organization organization;
+
     private LocalDateTime startTime;
 
     private LocalDateTime endTime;

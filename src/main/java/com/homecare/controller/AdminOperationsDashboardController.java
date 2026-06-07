@@ -2,6 +2,7 @@ package com.homecare.controller;
 
 import com.homecare.dto.AdminOperationsDashboardResponse;
 import com.homecare.service.AdminOperationsDashboardService;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -18,7 +19,7 @@ public class AdminOperationsDashboardController {
     }
 
     @GetMapping("/summary")
-    public AdminOperationsDashboardResponse getSummary() {
-        return dashboardService.getSummary();
+    public AdminOperationsDashboardResponse getSummary(Authentication authentication) {
+        return dashboardService.getSummary(authentication.getName());
     }
 }
