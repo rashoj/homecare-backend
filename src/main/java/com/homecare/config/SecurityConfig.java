@@ -58,7 +58,8 @@ public class SecurityConfig {
 
         configuration.setAllowedOrigins(java.util.List.of(
                 "http://localhost:5173",
-                "https://homecare-admin-dashboard.vercel.app"
+                "https://homecare-admin-dashboard.vercel.app",
+                "https://homecare-admin-dashboard-git-main-rashojontas-projects.vercel.app"
         ));
 
         configuration.setAllowedMethods(java.util.List.of(
@@ -66,7 +67,9 @@ public class SecurityConfig {
         ));
 
         configuration.setAllowedHeaders(java.util.List.of("*"));
+        configuration.setExposedHeaders(java.util.List.of("Authorization"));
         configuration.setAllowCredentials(true);
+        configuration.setMaxAge(3600L);
 
         org.springframework.web.cors.UrlBasedCorsConfigurationSource source =
                 new org.springframework.web.cors.UrlBasedCorsConfigurationSource();
@@ -81,10 +84,13 @@ public class SecurityConfig {
 
         http
                 .csrf(csrf -> csrf.disable())
-                .cors(cors -> {})
+                .cors(cors -> cors.configurationSource(corsConfigurationSource()))
                 .formLogin(form -> form.disable())
                 .httpBasic(basic -> basic.disable())
                 .authorizeHttpRequests(auth -> auth
+
+                        // CORS preflight
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
 
                         // Public
                         .requestMatchers("/api/auth/**", "/api/test").permitAll()
@@ -170,6 +176,9 @@ public class SecurityConfig {
 
                         // Dashboards
                         .requestMatchers("/api/dashboard/admin")
+                        .hasAnyRole(AGENCY_ADMIN_ROLES)
+
+                        .requestMatchers("/api/dashboard/admin/**")
                         .hasAnyRole(AGENCY_ADMIN_ROLES)
 
                         .requestMatchers("/api/dashboard/caregiver/**")
