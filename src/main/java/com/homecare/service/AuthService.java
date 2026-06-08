@@ -58,11 +58,46 @@ public class AuthService {
 
     public AuthResponse login(LoginRequest request) {
 
-        User user = userRepository.findByEmail(request.getEmail())
-                .orElseThrow(() -> new RuntimeException("Invalid email or password"));
+        String email = request.getEmail() != null
+                ? request.getEmail().trim().toLowerCase()
+                : "";
 
-        if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
+        String rawPassword = request.getPassword() != null
+                ? request.getPassword()
+                : "";
+
+        System.out.println("========== LOGIN DEBUG ==========");
+        System.out.println("LOGIN EMAIL=[" + email + "]");
+        System.out.println("LOGIN PASSWORD LENGTH=" + rawPassword.length());
+
+        User user = userRepository.findByEmail(email)
+                .orElseThrow(() -> {
+                    System.out.println("LOGIN USER NOT FOUND FOR EMAIL=[" + email + "]");
+                    return new RuntimeException("Invalid email or password");
+                });
+
+        System.out.println("DB USER FOUND=[" + user.getEmail() + "]");
+        System.out.println("DB ROLE=[" + user.getRole() + "]");
+        System.out.println("DB ACTIVE=[" + user.getActive() + "]");
+        System.out.println("DB HASH LENGTH=" + (user.getPassword() != null ? user.getPassword().length() : null));
+        System.out.println("DB HASH START=" +
+                (user.getPassword() != null && user.getPassword().length() >= 7
+                        ? user.getPassword().substring(0, 7)
+                        : user.getPassword())
+        );
+
+        boolean passwordMatches =
+                passwordEncoder.matches(rawPassword, user.getPassword());
+
+        System.out.println("PASSWORD MATCH=" + passwordMatches);
+        System.out.println("=================================");
+
+        if (!passwordMatches) {
             throw new RuntimeException("Invalid email or password");
+        }
+
+        if (Boolean.FALSE.equals(user.getActive())) {
+            throw new RuntimeException("User account is inactive");
         }
 
         String token = jwtService.generateToken(

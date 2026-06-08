@@ -9,9 +9,6 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.boot.CommandLineRunner;
-import org.springframework.context.annotation.Bean;
-import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 @SpringBootApplication
 @EnableScheduling
@@ -22,8 +19,10 @@ public class HomecareBackendApplication {
 	}
 
 	@Bean
-    CommandLineRunner seedAdmin(UserRepository userRepository,
-                                PasswordEncoder passwordEncoder) {
+	CommandLineRunner seedAdmin(
+			UserRepository userRepository,
+			PasswordEncoder passwordEncoder
+	) {
 		return args -> {
 
 			if (userRepository.findByEmail("admin@homecare.com").isEmpty()) {
@@ -39,14 +38,19 @@ public class HomecareBackendApplication {
 
 				System.out.println("Admin user seeded.");
 			}
-		};
-	}
-	@Bean
-	CommandLineRunner generatePassword() {
-		return args -> {
+
+			String productionHash =
+					"$2a$10$H6ZmggGki5cZUq6IYkf6yeFMXRBILvynlw1Vy/SPqwznBCdM9uxka";
+
 			System.out.println("=================================");
-			System.out.println(
-					new BCryptPasswordEncoder().encode("Password123!")
+			System.out.println("PASSWORD TEST = " +
+					passwordEncoder.matches("Password123!", productionHash)
+			);
+
+			String freshHash = passwordEncoder.encode("Password123!");
+			System.out.println("FRESH HASH = " + freshHash);
+			System.out.println("FRESH HASH TEST = " +
+					passwordEncoder.matches("Password123!", freshHash)
 			);
 			System.out.println("=================================");
 		};
