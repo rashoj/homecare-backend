@@ -77,7 +77,7 @@ public class AuthService {
                 )
         );
 
-        User user = userRepository.findByEmail(email)
+        User user = userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> {
                     System.out.println("LOGIN USER NOT FOUND FOR EMAIL=[" + email + "]");
                     return new RuntimeException("Invalid email or password");

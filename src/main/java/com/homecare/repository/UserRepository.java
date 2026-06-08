@@ -1,6 +1,6 @@
 package com.homecare.repository;
-import com.homecare.entity.Role;
 
+import com.homecare.entity.Role;
 import com.homecare.entity.User;
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -11,14 +11,15 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByEmail(String email);
 
+    Optional<User> findByEmailIgnoreCase(String email);
+
     List<User> findByOrganizationIdOrderByCreatedAtDesc(Long organizationId);
 
     boolean existsByEmail(String email);
-    long countByRole(com.homecare.entity.Role role);
+
+    long countByRole(Role role);
 
     List<User> findByRole(Role role);
 
-    // UserRepository
     long countByRoleName(String roleName);
-
 }
