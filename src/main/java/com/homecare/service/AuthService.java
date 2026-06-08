@@ -69,6 +69,13 @@ public class AuthService {
         System.out.println("========== LOGIN DEBUG ==========");
         System.out.println("LOGIN EMAIL=[" + email + "]");
         System.out.println("LOGIN PASSWORD LENGTH=" + rawPassword.length());
+        System.out.println("DATABASE USER COUNT=" + userRepository.count());
+
+        userRepository.findAll().forEach(u ->
+                System.out.println(
+                        "USER IN DB=[" + u.getEmail() + "] ROLE=[" + u.getRole() + "]"
+                )
+        );
 
         User user = userRepository.findByEmail(email)
                 .orElseThrow(() -> {
@@ -114,7 +121,6 @@ public class AuthService {
                 .message("Login successful")
                 .build();
     }
-
     public void resetAdminPassword() {
         User user = userRepository.findByEmail("admin@homecare.com")
                 .orElseThrow(() -> new RuntimeException("Admin user not found"));
