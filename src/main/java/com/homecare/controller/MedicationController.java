@@ -47,8 +47,11 @@ public class MedicationController {
     }
 
     @PostMapping("/logs")
-    public MedicationLogResponse logMedication(@RequestBody MedicationLogRequest request) {
-        return medicationService.logMedication(request);
+    public MedicationLogResponse logMedication(
+            @RequestBody MedicationLogRequest request,
+            org.springframework.security.core.Authentication authentication
+    ) {
+        return medicationService.logMedication(request, authentication.getName());
     }
 
     @GetMapping("/logs/client/{clientId}")

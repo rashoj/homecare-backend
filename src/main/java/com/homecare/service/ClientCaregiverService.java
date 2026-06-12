@@ -29,7 +29,7 @@ public class ClientCaregiverService {
         this.userRepository = userRepository;
     }
 
-    public ClientCaregiverResponse assignCaregiver(AssignCaregiverRequest request) {
+    public ClientCaregiverResponse assignCaregiver(AssignCaregiverRequest request, String actorEmail) {
         if (clientCaregiverRepository.existsByClientIdAndCaregiverIdAndActiveTrue(
                 request.getClientId(),
                 request.getCaregiverId()
@@ -55,14 +55,14 @@ public class ClientCaregiverService {
         return mapToResponse(clientCaregiverRepository.save(assignment));
     }
 
-    public List<ClientCaregiverResponse> getCaregiversByClient(Long clientId) {
+    public List<ClientCaregiverResponse> getCaregiversByClient(Long clientId, String actorEmail) {
         return clientCaregiverRepository.findByClientIdAndActiveTrue(clientId)
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
     }
 
-    public ClientCaregiverResponse deactivateAssignment(Long id) {
+    public ClientCaregiverResponse deactivateAssignment(Long id, String actorEmail) {
         ClientCaregiver assignment = clientCaregiverRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Caregiver assignment not found."));
 

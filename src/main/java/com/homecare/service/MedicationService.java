@@ -123,11 +123,13 @@ public class MedicationService {
         );
     }
 
-    public MedicationLogResponse logMedication(MedicationLogRequest request) {
+    public MedicationLogResponse logMedication(MedicationLogRequest request, String actorEmail) {
         Medication medication = medicationRepository.findById(request.getMedicationId())
                 .orElseThrow(() -> new RuntimeException("Medication not found"));
 
-        User actor = getActor(request.getActorUserId());
+        User actor = userRepository.findByEmailIgnoreCase(actorEmail)
+                .orElseThrow(() -> new RuntimeException("Logged-in user not found."));
+
 
         User caregiver = null;
         if (request.getCaregiverId() != null) {

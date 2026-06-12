@@ -21,23 +21,25 @@ public class ClientCaregiverController {
 
     @PostMapping
     public ClientCaregiverResponse assignCaregiver(
-            @RequestBody AssignCaregiverRequest request
+            @RequestBody AssignCaregiverRequest request,
+            Authentication authentication
     ) {
-        return clientCaregiverService.assignCaregiver(request);
+        return clientCaregiverService.assignCaregiver(request, authentication.getName());
     }
 
     @GetMapping("/client/{clientId}")
     public List<ClientCaregiverResponse> getCaregiversByClient(
-            @PathVariable Long clientId
+            @PathVariable Long clientId,
+            Authentication authentication
     ) {
-        return clientCaregiverService.getCaregiversByClient(clientId);
+        return clientCaregiverService.getCaregiversByClient(clientId, authentication.getName());
     }
 
     @PutMapping("/{id}/deactivate")
     public ClientCaregiverResponse deactivateAssignment(
-            @PathVariable Long id
+            @PathVariable Long id,
+            Authentication authentication
     ) {
-        return clientCaregiverService.deactivateAssignment(id);
+        return clientCaregiverService.deactivateAssignment(id, authentication.getName());
     }
-
 }
