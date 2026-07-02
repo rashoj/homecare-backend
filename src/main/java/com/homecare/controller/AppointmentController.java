@@ -1,5 +1,6 @@
 package com.homecare.controller;
 
+import com.homecare.dto.AppointmentAssignCaregiverRequest;
 import com.homecare.dto.AppointmentRequest;
 import com.homecare.dto.AppointmentResponse;
 import com.homecare.dto.AppointmentStatusUpdateRequest;
@@ -64,5 +65,17 @@ public class AppointmentController {
             Authentication authentication
     ) {
         return appointmentService.getAppointmentById(id, authentication.getName());
+    }
+    @PutMapping("/{appointmentId}/assign-caregiver")
+    public AppointmentResponse assignCaregiverToAppointment(
+            @PathVariable Long appointmentId,
+            @RequestBody AppointmentAssignCaregiverRequest request,
+            Authentication authentication
+    ) {
+        return appointmentService.assignCaregiverToAppointment(
+                appointmentId,
+                request,
+                authentication.getName()
+        );
     }
 }

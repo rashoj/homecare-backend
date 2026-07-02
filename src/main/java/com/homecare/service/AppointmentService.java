@@ -1,8 +1,6 @@
 package com.homecare.service;
 
-import com.homecare.dto.AppointmentRequest;
-import com.homecare.dto.AppointmentResponse;
-import com.homecare.dto.AppointmentStatusUpdateRequest;
+import com.homecare.dto.*;
 import com.homecare.entity.Appointment;
 import com.homecare.entity.Client;
 import com.homecare.entity.Organization;
@@ -24,25 +22,25 @@ public class AppointmentService {
     private final UserRepository userRepository;
     private final ClientCaregiverRepository clientCaregiverRepository;
     private final AuditLogService auditLogService;
+    private final WorkforceReadinessService workforceReadinessService;
 
     public AppointmentService(
             AppointmentRepository appointmentRepository,
             ClientRepository clientRepository,
             UserRepository userRepository,
             ClientCaregiverRepository clientCaregiverRepository,
-            AuditLogService auditLogService
+            AuditLogService auditLogService,
+            WorkforceReadinessService workforceReadinessService
     ) {
         this.appointmentRepository = appointmentRepository;
         this.clientRepository = clientRepository;
         this.userRepository = userRepository;
         this.clientCaregiverRepository = clientCaregiverRepository;
         this.auditLogService = auditLogService;
+        this.workforceReadinessService = workforceReadinessService;
     }
 
-    public AppointmentResponse createAppointment(
-            AppointmentRequest request,
-            String actorEmail
-    ) {
+    public AppointmentResponse createAppointment(AppointmentRequest request, String actorEmail) {
         User actor = getActor(actorEmail);
         Organization organization = requireOrganization(actor);
 
@@ -53,18 +51,7 @@ public class AppointmentService {
         User caregiver = userRepository.findById(request.getCaregiverId())
                 .orElseThrow(() -> new RuntimeException("Caregiver not found"));
 
-        if (caregiver.getOrganization() == null ||
-                !caregiver.getOrganization().getId().equals(organization.getId())) {
-            throw new RuntimeException("Caregiver does not belong to this organization");
-        }
-
-        boolean assigned = clientCaregiverRepository
-                .existsByClientIdAndCaregiverIdAndActiveTrue(client.getId(), caregiver.getId());
-
-        if (!assigned) {
-            throw new RuntimeException("Caregiver must be assigned to the client before scheduling.");
-        }
-
+        validateCaregiverForAppointment(client, caregiver, organization, actorEmail, true);
         validateAppointmentTimes(request);
 
         String repeatType = defaultValue(request.getRepeatType(), "NONE");
@@ -110,6 +97,127 @@ public class AppointmentService {
         );
 
         return mapToResponse(appointments.get(0));
+    }
+
+    public AppointmentResponse createAppointmentFromOpenShift(
+            AppointmentRequest request,
+            User actor,
+            Boolean requireClientAssignment
+    ) {
+        Organization organization = requireOrganization(actor);
+
+        Client client = clientRepository
+                .findByIdAndOrganizationId(request.getClientId(), organization.getId())
+                .orElseThrow(() -> new RuntimeException("Client not found for this organization"));
+
+        User caregiver = userRepository.findById(request.getCaregiverId())
+                .orElseThrow(() -> new RuntimeException("Caregiver not found"));
+
+        validateCaregiverForAppointment(
+                client,
+                caregiver,
+                organization,
+                actor.getEmail(),
+                requireClientAssignment
+        );
+
+        validateAppointmentTimes(request);
+        validateNoScheduleConflict(request);
+
+        String repeatType = defaultValue(request.getRepeatType(), "NONE");
+
+        Appointment savedAppointment = appointmentRepository.save(
+                buildAppointment(request, client, caregiver, organization, repeatType)
+        );
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                client.getId(),
+                "CREATE_APPOINTMENT_FROM_OPEN_SHIFT",
+                "APPOINTMENT",
+                savedAppointment.getId(),
+                "Appointment created from open shift claim."
+        );
+
+        return mapToResponse(savedAppointment);
+    }
+
+    public AppointmentResponse assignCaregiverToAppointment(
+            Long appointmentId,
+            AppointmentAssignCaregiverRequest request,
+            String actorEmail
+    ) {
+        User actor = getActor(actorEmail);
+        Organization organization = requireOrganization(actor);
+
+        Appointment appointment = appointmentRepository
+                .findByIdAndOrganizationId(appointmentId, organization.getId())
+                .orElseThrow(() -> new RuntimeException("Appointment not found for this organization"));
+
+        if ("COMPLETED".equalsIgnoreCase(appointment.getStatus()) ||
+                "CANCELLED".equalsIgnoreCase(appointment.getStatus())) {
+            throw new RuntimeException("Cannot assign caregiver to a completed or cancelled appointment.");
+        }
+
+        if (request.getCaregiverId() == null) {
+            throw new RuntimeException("Caregiver is required.");
+        }
+
+        User caregiver = userRepository.findById(request.getCaregiverId())
+                .orElseThrow(() -> new RuntimeException("Caregiver not found"));
+
+        AppointmentRequest validationRequest = new AppointmentRequest();
+        validationRequest.setClientId(appointment.getClient().getId());
+        validationRequest.setCaregiverId(caregiver.getId());
+        validationRequest.setStartTime(appointment.getStartTime());
+        validationRequest.setEndTime(appointment.getEndTime());
+        validationRequest.setServiceType(appointment.getServiceType());
+        validationRequest.setShiftType(appointment.getShiftType());
+        validationRequest.setStatus(appointment.getStatus());
+        validationRequest.setEvvRequired(appointment.getEvvRequired());
+        validationRequest.setBillable(appointment.getBillable());
+        validationRequest.setRepeatType("NONE");
+        validationRequest.setNotes(request.getNotes());
+
+        validateCaregiverForAppointment(
+                appointment.getClient(),
+                caregiver,
+                organization,
+                actorEmail,
+                true
+        );
+
+        validateAppointmentTimes(validationRequest);
+        validateNoScheduleConflictForAssignment(appointmentId, validationRequest);
+
+        appointment.setCaregiver(caregiver);
+
+        if (request.getNotes() != null && !request.getNotes().isBlank()) {
+            String existingNotes = appointment.getNotes() != null ? appointment.getNotes() : "";
+
+            appointment.setNotes(
+                    existingNotes.isBlank()
+                            ? request.getNotes()
+                            : existingNotes + "\n" + request.getNotes()
+            );
+        }
+
+        Appointment savedAppointment = appointmentRepository.save(appointment);
+
+        auditLogService.logAction(
+                actor.getId(),
+                actor.getFullName(),
+                actor.getRole().name(),
+                savedAppointment.getClient().getId(),
+                "ASSIGN_CAREGIVER_TO_APPOINTMENT",
+                "APPOINTMENT",
+                savedAppointment.getId(),
+                "Assigned caregiver " + caregiver.getFullName() + " to appointment."
+        );
+
+        return mapToResponse(savedAppointment);
     }
 
     public AppointmentResponse updateAppointmentStatus(
@@ -161,10 +269,7 @@ public class AppointmentService {
         return mapToResponse(savedAppointment);
     }
 
-    public AppointmentResponse getAppointmentById(
-            Long id,
-            String actorEmail
-    ) {
+    public AppointmentResponse getAppointmentById(Long id, String actorEmail) {
         User actor = getActor(actorEmail);
         Organization organization = requireOrganization(actor);
 
@@ -186,10 +291,7 @@ public class AppointmentService {
                 .toList();
     }
 
-    public List<AppointmentResponse> getAppointmentsByClient(
-            Long clientId,
-            String actorEmail
-    ) {
+    public List<AppointmentResponse> getAppointmentsByClient(Long clientId, String actorEmail) {
         User actor = getActor(actorEmail);
         Organization organization = requireOrganization(actor);
 
@@ -200,10 +302,7 @@ public class AppointmentService {
                 .toList();
     }
 
-    public List<AppointmentResponse> getAppointmentsByCaregiver(
-            Long caregiverId,
-            String actorEmail
-    ) {
+    public List<AppointmentResponse> getAppointmentsByCaregiver(Long caregiverId, String actorEmail) {
         User actor = getActor(actorEmail);
         Organization organization = requireOrganization(actor);
 
@@ -212,6 +311,33 @@ public class AppointmentService {
                 .stream()
                 .map(this::mapToResponse)
                 .toList();
+    }
+
+    private void validateCaregiverForAppointment(
+            Client client,
+            User caregiver,
+            Organization organization,
+            String actorEmail,
+            Boolean requireClientAssignment
+    ) {
+        if (caregiver.getOrganization() == null ||
+                !caregiver.getOrganization().getId().equals(organization.getId())) {
+            throw new RuntimeException("Caregiver does not belong to this organization");
+        }
+
+        if (Boolean.TRUE.equals(requireClientAssignment)) {
+            boolean assigned = clientCaregiverRepository
+                    .existsByClientIdAndCaregiverIdAndActiveTrue(
+                            client.getId(),
+                            caregiver.getId()
+                    );
+
+            if (!assigned) {
+                throw new RuntimeException("Caregiver must be assigned to the client before scheduling.");
+            }
+        }
+
+        validateCaregiverWorkforceReadiness(caregiver.getId(), actorEmail);
     }
 
     private void validateAppointmentTimes(AppointmentRequest request) {
@@ -246,6 +372,43 @@ public class AppointmentService {
                 )
                 .stream()
                 .anyMatch(appointment -> !"CANCELLED".equalsIgnoreCase(appointment.getStatus()));
+
+        if (clientConflict) {
+            throw new RuntimeException("Client already has an appointment during this time.");
+        }
+    }
+
+    private void validateNoScheduleConflictForAssignment(
+            Long appointmentId,
+            AppointmentRequest request
+    ) {
+        boolean caregiverConflict = appointmentRepository
+                .findByCaregiverIdAndStartTimeLessThanAndEndTimeGreaterThan(
+                        request.getCaregiverId(),
+                        request.getEndTime(),
+                        request.getStartTime()
+                )
+                .stream()
+                .anyMatch(appointment ->
+                        !"CANCELLED".equalsIgnoreCase(appointment.getStatus()) &&
+                                !appointment.getId().equals(appointmentId)
+                );
+
+        if (caregiverConflict) {
+            throw new RuntimeException("Caregiver already has an appointment during this time.");
+        }
+
+        boolean clientConflict = appointmentRepository
+                .findByClientIdAndStartTimeLessThanAndEndTimeGreaterThan(
+                        request.getClientId(),
+                        request.getEndTime(),
+                        request.getStartTime()
+                )
+                .stream()
+                .anyMatch(appointment ->
+                        !"CANCELLED".equalsIgnoreCase(appointment.getStatus()) &&
+                                !appointment.getId().equals(appointmentId)
+                );
 
         if (clientConflict) {
             throw new RuntimeException("Client already has an appointment during this time.");
@@ -355,7 +518,7 @@ public class AppointmentService {
     }
 
     private User getActor(String email) {
-        return userRepository.findByEmail(email)
+        return userRepository.findByEmailIgnoreCase(email)
                 .orElseThrow(() -> new RuntimeException("User not found"));
     }
 
@@ -387,8 +550,8 @@ public class AppointmentService {
                 .id(appointment.getId())
                 .clientId(appointment.getClient().getId())
                 .clientName(appointment.getClient().getFullName())
-                .caregiverId(appointment.getCaregiver().getId())
-                .caregiverName(appointment.getCaregiver().getFullName())
+                .caregiverId(appointment.getCaregiver() != null ? appointment.getCaregiver().getId() : null)
+                .caregiverName(appointment.getCaregiver() != null ? appointment.getCaregiver().getFullName() : null)
                 .startTime(appointment.getStartTime())
                 .endTime(appointment.getEndTime())
                 .serviceType(appointment.getServiceType())
@@ -401,5 +564,32 @@ public class AppointmentService {
                 .repeatType(appointment.getRepeatType())
                 .recurringGroupCreatedAt(appointment.getRecurringGroupCreatedAt())
                 .build();
+    }
+
+    private void validateCaregiverWorkforceReadiness(Long caregiverId, String actorEmail) {
+        WorkforceReadinessResponse readiness =
+                workforceReadinessService.getReadiness(caregiverId, actorEmail);
+
+        if (Boolean.TRUE.equals(readiness.getSchedulingBlocked())) {
+            StringBuilder message = new StringBuilder();
+
+            message.append("Cannot assign caregiver because the caregiver is not workforce compliant.");
+
+            if (readiness.getBlockingRequirements() != null &&
+                    !readiness.getBlockingRequirements().isEmpty()) {
+
+                message.append(" Blocking requirements:");
+
+                for (WorkforceReadinessIssue issue : readiness.getBlockingRequirements()) {
+                    message.append("\n• ")
+                            .append(issue.getDisplayName())
+                            .append(" (")
+                            .append(issue.getReason())
+                            .append(")");
+                }
+            }
+
+            throw new RuntimeException(message.toString());
+        }
     }
 }

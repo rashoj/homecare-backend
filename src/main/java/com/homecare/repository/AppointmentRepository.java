@@ -60,6 +60,12 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             LocalDateTime endTime,
             LocalDateTime startTime
     );
+    List<Appointment> findByCaregiverIdAndOrganizationIdAndStartTimeBetween(
+            Long caregiverId,
+            Long organizationId,
+            LocalDateTime start,
+            LocalDateTime end
+    );
 
 
     //    Optional<Appointment> findFirstByCaregiverIdAndStartTimeBetweenAndCompletedFalseOrderByStartTimeAsc(
