@@ -11,6 +11,8 @@ public interface OpenShiftRepository extends JpaRepository<OpenShift, Long> {
 
     List<OpenShift> findByOrganizationIdOrderByStartTimeAsc(Long organizationId);
 
+    long countByOrganizationIdAndStatus(Long organizationId, String status);
+
     List<OpenShift> findByOrganizationIdAndStatusOrderByStartTimeAsc(
             Long organizationId,
             String status
@@ -26,4 +28,9 @@ public interface OpenShiftRepository extends JpaRepository<OpenShift, Long> {
             String status,
             LocalDateTime after
     );
+    List<OpenShift> findTop5ByOrganizationIdAndStatusOrderByStartTimeAsc(
+            Long organizationId,
+            String status
+    );
+
 }

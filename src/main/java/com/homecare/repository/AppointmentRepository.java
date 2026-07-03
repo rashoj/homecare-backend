@@ -99,4 +99,22 @@ public interface AppointmentRepository extends JpaRepository<Appointment, Long> 
             List<String> statuses
     );
 
+    long countByOrganizationIdAndStartTimeBetween(
+            Long organizationId,
+            LocalDateTime start,
+            LocalDateTime end
+    );
+
+    long countByOrganizationIdAndStatusAndStartTimeBetween(
+            Long organizationId,
+            String status,
+            LocalDateTime start,
+            LocalDateTime end
+    );
+
+    long countByOrganizationIdAndCaregiverIdIsNullAndStartTimeBetween(
+            Long organizationId,
+            LocalDateTime start,
+            LocalDateTime end
+    );
 }

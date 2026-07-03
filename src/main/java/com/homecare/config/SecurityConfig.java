@@ -119,6 +119,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/client-caregivers/**")
                         .hasAnyRole("AGENCY_ADMIN", "SCHEDULER", "SUPERVISOR", "ADMIN")
 
+                        .requestMatchers("/api/ai-copilot/**")
+                        .hasAnyRole("AGENCY_ADMIN", "SCHEDULER", "SUPERVISOR", "FINANCE", "ADMIN")
+
                         .requestMatchers("/api/caregiver/assignments/**")
                         .hasAnyRole(AGENCY_CARE_ROLES)
 

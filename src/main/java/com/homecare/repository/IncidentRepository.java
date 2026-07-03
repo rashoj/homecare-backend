@@ -17,6 +17,8 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
 
     List<Incident> findByOrganizationIdOrderByCreatedAtDesc(Long organizationId);
 
+    long countByOrganizationIdAndStateReportableTrue(Long organizationId);
+
     long countByOrganizationIdAndSeverity(Long organizationId, String severity);
 
     long countByOrganizationIdAndStatus(Long organizationId, String status);
@@ -33,4 +35,14 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
 
     long countByClientIdAndStateReportableTrue(Long clientId);
     // IncidentRepository
+
+    List<Incident> findTop5ByOrganizationIdAndStatusOrderByCreatedAtDesc(
+            Long organizationId,
+            String status
+    );
+
+    List<Incident> findTop5ByOrganizationIdAndSeverityInOrderByCreatedAtDesc(
+            Long organizationId,
+            List<String> severities
+    );
 }

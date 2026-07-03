@@ -28,6 +28,11 @@ public interface EVVExceptionRepository extends JpaRepository<EVVException, Long
             Long clientId
     );
 
+    List<EVVException> findTop5ByOrganizationIdAndStatusOrderByCreatedAtDesc(
+            Long organizationId,
+            String status
+    );
+
     Optional<EVVException> findByIdAndOrganizationId(Long id, Long organizationId);
 
     long countByStatus(String status);
