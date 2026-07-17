@@ -33,4 +33,10 @@ public interface OpenShiftRepository extends JpaRepository<OpenShift, Long> {
             String status
     );
 
+    List<OpenShift> findTop5ByOrganizationIdAndStatusAndPriorityInOrderByStartTimeAsc(
+            Long organizationId,
+            String status,
+            List<String> priorities
+    );
+
 }

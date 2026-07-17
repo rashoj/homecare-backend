@@ -40,9 +40,52 @@ public interface IncidentRepository extends JpaRepository<Incident, Long> {
             Long organizationId,
             String status
     );
+    long countByOrganizationIdAndSeverityAndStatusIn(
+            Long organizationId,
+            String severity,
+            List<String> statuses
+    );
+    long countByOrganizationIdAndStateReportableTrueAndStatusIn(
+            Long organizationId,
+            List<String> statuses
+    );
 
     List<Incident> findTop5ByOrganizationIdAndSeverityInOrderByCreatedAtDesc(
             Long organizationId,
             List<String> severities
+    );
+    List<Incident> findTop5ByOrganizationIdAndSeverityInAndStatusInOrderByCreatedAtDesc(
+            Long organizationId,
+            List<String> severities,
+            List<String> statuses
+    );
+
+    List<Incident> findTop5ByOrganizationIdAndStateReportableTrueAndStatusInOrderByCreatedAtDesc(
+            Long organizationId,
+            List<String> statuses
+    );
+
+    List<Incident> findTop5ByOrganizationIdAndStatusInOrderByCreatedAtDesc(
+            Long organizationId,
+            List<String> statuses
+    );
+
+    long countByOrganizationIdAndClientIdAndStatusIn(
+            Long organizationId,
+            Long clientId,
+            List<String> statuses
+    );
+
+    long countByOrganizationIdAndClientIdAndSeverityInAndStatusIn(
+            Long organizationId,
+            Long clientId,
+            List<String> severities,
+            List<String> statuses
+    );
+
+    List<Incident> findTop5ByOrganizationIdAndClientIdAndStatusInOrderByCreatedAtDesc(
+            Long organizationId,
+            Long clientId,
+            List<String> statuses
     );
 }

@@ -33,6 +33,17 @@ public interface EVVExceptionRepository extends JpaRepository<EVVException, Long
             String status
     );
 
+    List<EVVException> findTop5ByOrganizationIdAndSeverityInAndStatusOrderByCreatedAtDesc(
+            Long organizationId,
+            List<String> severities,
+            String status
+    );
+    long countByOrganizationIdAndSeverityAndStatus(
+            Long organizationId,
+            String severity,
+            String status
+    );
+
     Optional<EVVException> findByIdAndOrganizationId(Long id, Long organizationId);
 
     long countByStatus(String status);
@@ -47,5 +58,31 @@ public interface EVVExceptionRepository extends JpaRepository<EVVException, Long
             Long appointmentId,
             Long clockRecordId,
             String exceptionType
+    );
+
+    long countByOrganizationIdAndClientIdAndStatus(
+            Long organizationId,
+            Long clientId,
+            String status
+    );
+
+    long countByOrganizationIdAndClientIdAndSeverityInAndStatus(
+            Long organizationId,
+            Long clientId,
+            List<String> severities,
+            String status
+    );
+
+    long countByOrganizationIdAndCaregiverIdAndStatus(
+            Long organizationId,
+            Long caregiverId,
+            String status
+    );
+
+    long countByOrganizationIdAndCaregiverIdAndSeverityInAndStatus(
+            Long organizationId,
+            Long caregiverId,
+            List<String> severities,
+            String status
     );
 }

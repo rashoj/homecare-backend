@@ -14,7 +14,9 @@ public record AIOperationsCenterDTO(
 
         IncidentInsightDTO incidents,
 
-        List<RecommendationDTO> recommendations
+        List<RecommendationDTO> recommendations,
+
+        String executiveBrief
 
 ) {
 }

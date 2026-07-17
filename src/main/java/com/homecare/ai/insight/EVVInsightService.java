@@ -21,8 +21,16 @@ public class EVVInsightService {
 
     public EVVInsightDTO getInsight(Long organizationId) {
         long highSeverity =
-                evvExceptionRepository.countByOrganizationIdAndSeverity(organizationId, "HIGH")
-                        + evvExceptionRepository.countByOrganizationIdAndSeverity(organizationId, "CRITICAL");
+                evvExceptionRepository.countByOrganizationIdAndSeverityAndStatus(
+                        organizationId,
+                        "HIGH",
+                        "OPEN"
+                )
+                        + evvExceptionRepository.countByOrganizationIdAndSeverityAndStatus(
+                        organizationId,
+                        "CRITICAL",
+                        "OPEN"
+                );
 
         return new EVVInsightDTO(
                 evvExceptionRepository.countByOrganizationIdAndStatus(organizationId, "OPEN"),
